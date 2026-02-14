@@ -1,0 +1,170 @@
+<?php
+/**
+ * 启动服务器说明 / 测试页面
+ */
+?>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>KuaeCloud API 测试</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+               max-width: 900px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
+        h1 { color: #333; }
+        h2 { color: #555; margin-top: 30px; }
+        .section { background: white; padding: 20px; border-radius: 8px; margin: 15px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        code { background: #e8e8e8; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', monospace; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; overflow-x: auto; }
+        textarea { width: 100%; height: 80px; margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; font-family: inherit; }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+        button:hover { background: #0056b3; }
+        button:disabled { background: #ccc; cursor: not-allowed; }
+        #result { background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 6px; margin-top: 15px; white-space: pre-wrap; font-family: 'Consolas', monospace; font-size: 13px; max-height: 400px; overflow-y: auto; }
+        .tips { background: #fff3cd; padding: 10px; border-radius: 4px; margin: 10px 0; }
+        .success { color: #28a745; }
+        .error { color: #dc3545; }
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background: #f8f9fa; }
+    </style>
+</head>
+<body>
+    <h1>🚀 KuaeCloud Local API 测试</h1>
+    
+    <div class="section">
+        <h2>1️⃣ 启动服务器</h2>
+        <p>在项目目录运行：</p>
+        <pre>php -S localhost:12680 kuaecloud-api.php</pre>
+        <div class="tips">
+            💡 提示：确保 <code>api-key.ini</code> 文件在同一目录下
+        </div>
+    </div>
+
+    <div class="section">
+        <h2>2️⃣ 快速测试</h2>
+        <textarea id="prompt" placeholder="输入你的问题...">用PHP写一个快速排序函数</textarea>
+        <br>
+        <button onclick="sendRequest()" id="sendBtn">发送请求</button>
+        <button onclick="clearResult()">清空</button>
+        <div id="result">点击"发送请求"开始测试...</div>
+    </div>
+
+    <div class="section">
+        <h2>3️⃣ 各工具配置</h2>
+        <table>
+            <tr><th>工具</th><th>配置项</th><th>值</th></tr>
+            <tr><td><strong>OpenAI SDK</strong></td><td>Base URL</td><td><code>http://localhost:12680/v1</code></td></tr>
+            <tr><td><strong>Cline</strong></td><td>API Provider</td><td>OpenAI Compatible</td></tr>
+            <tr><td><strong>Cursor</strong></td><td>Base URL</td><td><code>http://localhost:12680/v1</code></td></tr>
+            <tr><td><strong>Kilo Code</strong></td><td>Base URL</td><td><code>http://localhost:12680/v1</code></td></tr>
+            <tr><td><strong>Python requests</strong></td><td>endpoint</td><td><code>http://localhost:12680/v1/chat/completions</code></td></tr>
+        </table>
+    </div>
+
+    <div class="section">
+        <h2>4️⃣ curl 测试命令</h2>
+        <pre>curl -X POST http://localhost:12680/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer REVOKED_KEY" \
+  -d '{
+    "model": "GLM-4.7",
+    "messages": [{"role": "user", "content": "你好"}]
+  }'</pre>
+    </div>
+
+    <div class="section">
+        <h2>5️⃣ Python 示例</h2>
+        <pre>from openai import OpenAI
+
+client = OpenAI(
+    api_key="REVOKED_KEY",
+    base_url="http://localhost:12680/v1"
+)
+
+response = client.chat.completions.create(
+    model="GLM-4.7",
+    messages=[{"role": "user", "content": "你好"}]
+)
+
+print(response.choices[0].message.content)</pre>
+    </div>
+
+    <script>
+        const apiKey = 'REVOKED_KEY';
+        const apiUrl = 'http://localhost:12680/v1/chat/completions';
+        
+        function appendResult(text) {
+            const result = document.getElementById('result');
+            result.textContent = text;
+        }
+        
+        function clearResult() {
+            document.getElementById('result').textContent = '已清空';
+        }
+        
+        async function sendRequest() {
+            const prompt = document.getElementById('prompt').value;
+            const btn = document.getElementById('sendBtn');
+            
+            if (!prompt.trim()) {
+                appendResult('请输入问题');
+                return;
+            }
+            
+            btn.disabled = true;
+            btn.textContent = '请求中...';
+            appendResult('⏳ 正在发送请求...\n');
+            
+            const startTime = Date.now();
+            
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + apiKey
+                    },
+                    body: JSON.stringify({
+                        model: 'GLM-4.7',
+                        messages: [
+                            { role: 'user', content: prompt }
+                        ],
+                        max_tokens: 2000,
+                        temperature: 0.7
+                    })
+                });
+                
+                const data = await response.json();
+                const elapsed = (Date.now() - startTime) / 1000;
+                
+                let output = `✅ 请求成功 (${elapsed.toFixed(2)}s)\n`;
+                output += `────────────────────\n\n`;
+                
+                if (data.choices && data.choices[0]) {
+                    output += data.choices[0].message.content;
+                } else {
+                    output += JSON.stringify(data, null, 2);
+                }
+                
+                appendResult(output);
+            } catch (error) {
+                let errorMsg = `❌ 请求失败\n`;
+                errorMsg += `────────────────────\n`;
+                errorMsg += `错误: ${error.message}\n\n`;
+                
+                if (error.message.includes('Failed to fetch')) {
+                    errorMsg += `💡 请检查服务器是否已启动:\n`;
+                    errorMsg += `   php -S localhost:12680 kuaecloud-api.php\n`;
+                }
+                
+                appendResult(errorMsg);
+            }
+            
+            btn.disabled = false;
+            btn.textContent = '发送请求';
+        }
+    </script>
+</body>
+</html>
