@@ -2,6 +2,9 @@
 chcp 65001 >nul
 setlocal enabledelayedexpansion
 
+:: 切换到项目根目录
+cd /d "%~dp0\..\.."
+
 echo ========================================
 echo 本地 API 代理服务启动 (优化版)
 echo ========================================
@@ -11,12 +14,12 @@ echo.
 echo 1. 检查Python环境...
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo ❌ 未找到Python，请先安装Python 3.7+
+    echo [错误] 未找到Python，请先安装Python 3.7+
     echo 下载地址: https://www.python.org/downloads/
     pause
     exit /b 1
 )
-echo ✅ Python已安装
+echo [OK] Python已安装
 
 :: 检查必需依赖
 echo.
@@ -40,9 +43,9 @@ pip show watchdog >nul 2>&1
 if errorlevel 1 (
     echo 安装Watchwatchdog (用于文件监控)...
     pip install watchdog
-    echo ✅ 文件监控功能已启用
+    echo [OK] 文件监控功能已启用
 ) else (
-    echo ✅ Watchwatchdog已安装
+    echo [OK] Watchwatchdog已安装
 )
 
 :: 检查配置文件
@@ -58,7 +61,7 @@ if not exist ".env" (
         if not "!api_key!"=="" (
             echo OPENROUTER_API_KEY=!api_key! > .env
             echo CACHE_DIR=./cache >> .env
-            echo ✅ .env文件已创建
+            echo [OK] .env文件已创建
         )
     )
 )
