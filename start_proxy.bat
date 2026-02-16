@@ -1,4 +1,10 @@
 @echo off
+setlocal enabledelayedexpansion
+
+title ks1-simple-api
+
+cd /d "%~dp0"
+
 echo 启动本地 API 代理服务...
 echo.
 echo 检查依赖...

@@ -17,6 +17,7 @@ RESTART_FLAG = False
 WATCHED_FILES = {'.env', 'local_api_proxy.py'}
 DEBUG_MODE = False
 CACHE_DIR = None
+HTTP_PROXY = None
 
 class FileChangeHandler(FileSystemEventHandler):
     """监控文件变化"""
@@ -119,12 +120,14 @@ def ensure_cache_dir():
 
 def reload_env():
     """重新加载环境变量"""
-    global API_KEY, DEBUG_MODE, CACHE_DIR
+    global API_KEY, DEBUG_MODE, CACHE_DIR, HTTP_PROXY
     # 清除旧的环境变量
     if 'OPENROUTER_API_KEY' in os.environ:
         del os.environ['OPENROUTER_API_KEY']
     if 'CACHE_DIR' in os.environ:
         del os.environ['CACHE_DIR']
+    if 'HTTP_PROXY' in os.environ:
+        del os.environ['HTTP_PROXY']
     
     load_env()
     API_KEY = os.getenv("OPENROUTER_API_KEY")
@@ -134,6 +137,7 @@ def reload_env():
     # 更新调试模式和缓存目录
     DEBUG_MODE = check_debug_mode()
     CACHE_DIR = os.getenv("CACHE_DIR")
+    HTTP_PROXY = os.getenv("HTTP_PROXY")
     
     if DEBUG_MODE:
         print("[调试] 调试模式已启用")
@@ -141,6 +145,9 @@ def reload_env():
             ensure_cache_dir()
         else:
             print("[调试] 未配置缓存目录，消息不会被保存")
+    
+    if HTTP_PROXY:
+        print(f"[代理] HTTP 代理已配置: {HTTP_PROXY}")
     
     print("[重载] 环境变量已重新加载")
 
@@ -158,8 +165,11 @@ def load_env():
 load_env()
 
 API_KEY = os.getenv("OPENROUTER_API_KEY")
-if not API_KEY:
-    raise ValueError("OPENROUTER_API_KEY not found in .env file")
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
+HTTP_PROXY = os.getenv("HTTP_PROXY")
+
+if not API_KEY and not TEST_MODE:
+    raise ValueError("OPENROUTER_API_KEY not found in .env file and TEST_MODE is not enabled")
 
 # 初始化调试模式和缓存目录
 DEBUG_MODE = check_debug_mode()
@@ -170,7 +180,7 @@ OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_completions():
     """兼容 OpenAI API 格式的聊天完成端点"""
-    global RESTART_FLAG, API_KEY, DEBUG_MODE, CACHE_DIR
+    global RESTART_FLAG, API_KEY, DEBUG_MODE, CACHE_DIR, HTTP_PROXY
     
     # 检查是否需要重启
     if RESTART_FLAG:
@@ -186,6 +196,7 @@ def chat_completions():
     # 检查调试模式
     DEBUG_MODE = check_debug_mode()
     CACHE_DIR = os.getenv("CACHE_DIR")
+    HTTP_PROXY = os.getenv("HTTP_PROXY")
     
     try:
         data = request.json
@@ -204,18 +215,50 @@ def chat_completions():
             "top_p": data.get("top_p", 1),
         }
         
-        # 转发到 OpenRouter
-        headers = {
-            "Authorization": f"Bearer {API_KEY}",
-            "Content-Type": "application/json",
-            "HTTP-Referer": "http://localhost:5000",
-            "X-Title": "LocalAPIProxy",
-        }
-        
-        response = requests.post(OPENROUTER_API_URL, json=openrouter_payload, headers=headers)
-        response.raise_for_status()
-        
-        result = response.json()
+        # 测试模式或转发到 OpenRouter
+        if TEST_MODE:
+            # 返回模拟响应
+            result = {
+                "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                "created": int(time.time()),
+                "model": "openrouter/free",
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": "assistant",
+                        "content": "这是一个测试模式的响应。您已成功启动API代理服务！"
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 15,
+                    "total_tokens": 25
+                }
+            }
+            print("[测试模式] 返回模拟响应")
+        else:
+            # 转发到 OpenRouter
+            headers = {
+                "Authorization": f"Bearer {API_KEY}",
+                "Content-Type": "application/json",
+                "HTTP-Referer": "http://localhost:5000",
+                "X-Title": "LocalAPIProxy",
+            }
+            
+            # 配置代理
+            proxies = None
+            if HTTP_PROXY:
+                proxies = {
+                    "http": HTTP_PROXY,
+                    "https": HTTP_PROXY
+                }
+                print(f"[代理] 使用代理服务器: {HTTP_PROXY}")
+            
+            response = requests.post(OPENROUTER_API_URL, json=openrouter_payload, headers=headers, proxies=proxies)
+            response.raise_for_status()
+            
+            result = response.json()
         
         # 转换为 OpenAI 兼容格式
         response_data = {
@@ -312,8 +355,8 @@ def debug_page():
         <style>
             body {
                 font-family: Arial, sans-serif;
-                max-width: 800px;
-                margin: 50px auto;
+                max-width: 1000px;
+                margin: 20px auto;
                 padding: 20px;
                 background-color: #f5f5f5;
             }
@@ -322,8 +365,9 @@ def debug_page():
                 padding: 20px;
                 border-radius: 8px;
                 box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
             }
-            h1 {
+            h1, h2 {
                 color: #333;
                 border-bottom: 2px solid #007bff;
                 padding-bottom: 10px;
@@ -364,33 +408,165 @@ def debug_page():
                 font-size: 12px;
                 margin-top: 10px;
             }
+            /* 测试聊天样式 */
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 500px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                margin: 20px 0;
+            }
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 15px;
+                background-color: #f9f9f9;
+            }
+            .message {
+                margin: 10px 0;
+                padding: 10px;
+                border-radius: 8px;
+            }
+            .message.user {
+                background-color: #e3f2fd;
+                text-align: right;
+                margin-left: 20%;
+            }
+            .message.assistant {
+                background-color: #f1f8e9;
+                margin-right: 20%;
+            }
+            .message.error {
+                background-color: #ffebee;
+                color: #c62828;
+                margin-right: 20%;
+            }
+            .message .time {
+                font-size: 11px;
+                color: #666;
+                margin-top: 5px;
+            }
+            .message .latency {
+                font-size: 11px;
+                color: #007bff;
+                font-weight: bold;
+            }
+            .chat-input {
+                display: flex;
+                padding: 10px;
+                border-top: 1px solid #ddd;
+                background-color: white;
+            }
+            .chat-input input {
+                flex: 1;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            .chat-input button {
+                margin-left: 10px;
+                padding: 8px 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .chat-input button:hover {
+                background-color: #0056b3;
+            }
+            .chat-input button:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+            .loading {
+                color: #666;
+                font-style: italic;
+            }
+            .tabs {
+                display: flex;
+                border-bottom: 1px solid #ddd;
+                margin-bottom: 20px;
+            }
+            .tab {
+                padding: 10px 20px;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+            }
+            .tab.active {
+                border-bottom-color: #007bff;
+                color: #007bff;
+                font-weight: bold;
+            }
+            .tab-content {
+                display: none;
+            }
+            .tab-content.active {
+                display: block;
+            }
         </style>
     </head>
     <body>
         <div class="container">
             <h1>🔍 API 代理调试面板</h1>
             
-            <div class="stats">
-                <div class="stat-item">
-                    <span class="stat-label">今天已调用:</span>
-                    <span class="stat-value" id="callCount">-</span>
-                    <span> 次</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">日期:</span>
-                    <span id="date">-</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">最后更新:</span>
-                    <span id="lastUpdated">-</span>
-                </div>
-                <div class="timestamp" id="refreshTime"></div>
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('stats')">统计信息</div>
+                <div class="tab" onclick="showTab('chat')">测试聊天</div>
             </div>
             
-            <button class="refresh-btn" onclick="refreshStats()">刷新统计</button>
+            <!-- 统计信息标签页 -->
+            <div id="stats-tab" class="tab-content active">
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">今天已调用:</span>
+                        <span class="stat-value" id="callCount">-</span>
+                        <span> 次</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">日期:</span>
+                        <span id="date">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">最后更新:</span>
+                        <span id="lastUpdated">-</span>
+                    </div>
+                    <div class="timestamp" id="refreshTime"></div>
+                </div>
+                
+                <button class="refresh-btn" onclick="refreshStats()">刷新统计</button>
+            </div>
+            
+            <!-- 测试聊天标签页 -->
+            <div id="chat-tab" class="tab-content">
+                <h2>💬 AI 聊天测试</h2>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="输入您的问题..." onkeypress="handleKeyPress(event)">
+                        <button id="sendBtn" onclick="sendMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
         </div>
         
         <script>
+            function showTab(tabName) {
+                // 隐藏所有标签页内容
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.querySelectorAll('.tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                // 显示选中的标签页
+                document.getElementById(tabName + '-tab').classList.add('active');
+                event.target.classList.add('active');
+            }
+            
             function refreshStats() {
                 fetch('/debug/stats')
                     .then(response => response.json())
@@ -406,11 +582,113 @@ def debug_page():
                     });
             }
             
-            // 页面加载时刷新
+            function addMessage(role, content, latency = null, error = false) {
+                const messagesContainer = document.getElementById('chatMessages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${role} ${error ? 'error' : ''}`;
+                
+                let contentHtml = content.replace(/\\n/g, '<br>');
+                let metadataHtml = `<div class="time">${new Date().toLocaleString()}</div>`;
+                
+                if (latency !== null) {
+                    metadataHtml += `<div class="latency">响应时间: ${latency}ms</div>`;
+                }
+                
+                messageDiv.innerHTML = contentHtml + metadataHtml;
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            function sendMessage() {
+                const input = document.getElementById('messageInput');
+                const message = input.value.trim();
+                const sendBtn = document.getElementById('sendBtn');
+                
+                if (!message) return;
+                
+                // 显示用户消息
+                addMessage('user', message);
+                
+                // 清空输入框并禁用按钮
+                input.value = '';
+                sendBtn.disabled = true;
+                sendBtn.textContent = '发送中...';
+                
+                // 显示加载消息
+                const loadingId = 'loading-' + Date.now();
+                addMessage('assistant', '<span class="loading">AI 正在思考...</span>', null, false);
+                
+                const startTime = Date.now();
+                
+                // 发送请求到API
+                fetch('/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'any-model', // 代理会自动转换为 free 模型
+                        messages: [
+                            { role: 'user', content: message }
+                        ],
+                        max_tokens: 1000,
+                        temperature: 0.7
+                    })
+                })
+                .then(response => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    // 移除加载消息
+                    const loadingMessages = document.querySelectorAll('.message .loading');
+                    loadingMessages.forEach(msg => msg.parentElement.remove());
+                    
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || `HTTP ${response.status}`);
+                        });
+                    }
+                    
+                    return response.json();
+                })
+                .then(data => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    const content = data.choices?.[0]?.message?.content || '无回复内容';
+                    addMessage('assistant', content, latency);
+                })
+                .catch(error => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    // 移除加载消息
+                    const loadingMessages = document.querySelectorAll('.message .loading');
+                    loadingMessages.forEach(msg => msg.parentElement.remove());
+                    
+                    addMessage('assistant', `错误: ${error.message}`, latency, true);
+                })
+                .finally(() => {
+                    // 重新启用按钮
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '发送';
+                });
+            }
+            
+            function handleKeyPress(event) {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            }
+            
+            // 页面加载时刷新统计
             refreshStats();
             
-            // 每5秒自动刷新一次
-            setInterval(refreshStats, 5000);
+            // 每30秒自动刷新统计
+            setInterval(refreshStats, 30000);
+            
+            // 初始化聊天界面
+            document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用AI聊天测试！您可以在这里直接测试代理功能。</div>';
         </script>
     </body>
     </html>

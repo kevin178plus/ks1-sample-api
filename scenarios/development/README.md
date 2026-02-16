@@ -1,220 +1,93 @@
-# 🛠️ 开发调试场景
-
-**适用场景：** 本地开发、测试环境、功能调试
+# 开发环境启动脚本
 
 ## 📁 文件说明
 
-### 🔧 原始开发文件
-- **`local_api_proxy.py`** - 完整功能的本地代理服务
-  - 支持文件监控和自动重载
-  - 调试模式和消息缓存
-  - 网页调试面板
-  - 实时调用统计
+### `start_proxy.bat` - 原版（简单版）
+- **适用场景：** 快速启动，熟悉系统配置
+- **特点：** 英文界面，功能简单
+- **注意：** 需要在项目根目录运行，否则会闪退
 
-- **`start_proxy.bat`** - 开发环境启动脚本
-  - 自动检查和安装依赖
-  - 便捷的服务启动
+### `start_proxy_optimized.bat` - 优化版（推荐）
+- **适用场景：** 日常使用，完整功能
+- **特点：** 
+  - 中文界面，友好提示
+  - 自动检查Python环境和依赖
+  - 支持交互式创建.env文件
+  - 包含文件监控功能检查
+  - 显示详细服务信息
+  - **集成网页调试界面**
+- **使用：** 双击即可，自动切换到正确目录
 
-- **`test_local_proxy.py`** - 本地测试脚本
-  - API功能测试
-  - 连接性验证
-  - 示例调用代码
+## 🚀 使用建议
 
-### 🚀 优化版开发文件 (推荐)
-- **`local_api_proxy_optimized.py`** - 优化版代理服务
-  - ✅ 30秒超时控制，避免无限等待
-  - ✅ 缓存文件数量限制，防止磁盘耗尽
-  - ✅ 更好的错误处理和分类
-  - ✅ 完整的中文支持
-  - ✅ 线程安全的文件监控
+1. **首次使用：** 建议使用 `start_proxy_optimized.bat`
+2. **快速启动：** 如果环境已配置好，可使用 `start_proxy.bat`
+3. **调试模式：** 创建 `DEBUG_MODE.txt` 文件启用调试功能
 
-- **`start_proxy_optimized.bat`** - 优化版启动脚本
-  - ✅ UTF-8编码支持
-  - ✅ 完整的Python环境检查
-  - ✅ 智能的.env文件创建
-  - ✅ 清晰的用户提示
+## 📍 路径配置说明
 
-- **`test_local_proxy_optimized.py`** - 优化版测试脚本
-  - ✅ 30秒超时控制
-  - ✅ 中英文双语测试
-  - ✅ 详细的错误分类和处理
-  - ✅ 测试结果统计汇总
+### 🎯 **重要说明**
+双击 `scenarios/development/` 目录下的批处理文件时：
 
-## 🚀 开发启动
+- ✅ **实际运行：** 项目根目录的 `local_api_proxy.py`
+- ✅ **配置读取：** 项目根目录的 `.env` 文件
+- ❌ **不会运行：** `scenarios/development/local_api_proxy.py`
 
-### 🌟 推荐：使用优化版
-
-#### 1. 快速启动（优化版）
-```bash
-# 运行优化版启动脚本
-start_proxy_optimized.bat
-
-# 或直接启动优化版服务
-python local_api_proxy_optimized.py
+### 🔄 **路径切换逻辑**
+所有批处理文件都包含：
+```batch
+cd /d "%~dp0\..\.."
 ```
+- 从 `development/` 目录切换到项目根目录
+- 确保使用统一的配置和主程序文件
 
-#### 2. 测试功能（优化版）
-```bash
-# 运行优化版测试
-python test_local_proxy_optimized.py
-```
+### 📂 **文件用途**
+- **项目根目录文件：** 实际运行的版本
+- **development目录文件：** 场景备份/参考模板
 
-### 📋 原始版本启动
+这样设计的优势：
+- 🎯 统一配置管理，避免多个.env文件混乱
+- 🔧 集中维护，确保所有场景使用相同配置
+- 📦 简化部署，减少配置文件复制错误
 
-#### 1. 快速启动（原始版）
-```bash
-# 运行原始版启动脚本
-start_proxy.bat
+## ⚙️ 环境要求
 
-# 或直接启动原始版服务
-python local_api_proxy.py
-```
+- Python 3.7+
+- Flask
+- Requests
+- Watchdog（可选，用于文件监控）
 
-#### 2. 测试功能（原始版）
-```bash
-# 运行原始版测试
-python test_local_proxy.py
-```
+## 🌐 调试界面功能
 
-### 🔧 调试模式配置
-```bash
-# 创建调试模式文件
-echo > DEBUG_MODE.txt
+### 💬 网页调试面板
+访问 `http://localhost:5000/debug` 获得功能丰富的调试体验：
 
-# 配置缓存目录（可选）
-echo CACHE_DIR=./cache > .env
-echo OPENROUTER_API_KEY=your-key-here >> .env
-```
+#### 📊 统计信息
+- 实时调用次数统计
+- 每日调用历史
+- 最后更新时间
 
-### 📊 访问调试界面
-- **API服务**: http://localhost:5000/v1/chat/completions
-- **调试面板**: http://localhost:5000/debug
-- **健康检查**: http://localhost:5000/health
-- **统计接口**: http://localhost:5000/debug/stats
+#### 💭 测试聊天（新增）
+- **直接对话**：在网页中直接与AI对话
+- **性能监控**：精确显示响应时间（毫秒）
+- **状态指示**：实时显示请求状态
+- **错误处理**：友好的错误信息提示
+- **快捷操作**：Enter键快速发送
 
-## 🧪 测试功能
+**使用步骤：**
+1. 启动代理服务
+2. 浏览器访问 `http://localhost:5000/debug`
+3. 点击"测试聊天"标签
+4. 开始测试对话和查看性能数据
 
-### 🌟 优化版测试（推荐）
-```bash
-# 运行优化版测试脚本（自动测试中英文）
-python test_local_proxy_optimized.py
-```
+## 🔧 故障排除
 
-**优化版测试特点：**
-- ✅ 30秒超时控制
-- ✅ 中英文双语测试
-- ✅ 详细错误分类
-- ✅ 测试结果统计汇总
-- ✅ 常见问题排查指引
+如果遇到闪退问题：
+1. 确保项目根目录有 `.env` 文件
+2. 使用 `start_proxy_optimized.bat` 而不是原版
+3. 检查Python是否已正确安装并在PATH中
 
-### 📋 原始版测试
-```bash
-# 运行原始版测试脚本
-python test_local_proxy.py
-
-# 手动测试
-curl -X POST http://localhost:5000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
-```
-
-### 🔍 调试功能对比
-
-| 功能 | 原始版 | 优化版 |
-|------|--------|--------|
-| 文件监控 | ✅ | ✅ |
-| 消息缓存 | ✅ | ✅ |
-| 调用统计 | ✅ | ✅ |
-| 网页面板 | ✅ | ✅ |
-| 超时控制 | ❌ | ✅ 30秒 |
-| 缓存限制 | ❌ | ✅ 100文件 |
-| 中文支持 | ⚠️ 部分 | ✅ 完整 |
-| 错误处理 | ⚠️ 基础 | ✅ 详细 |
-
-### 🐛 常见问题排查
-
-**使用优化版时的优势：**
-- 超时错误：明确提示"请求超时"
-- 连接错误：提示"连接失败，请确保服务已启动"
-- API错误：区分网络错误和配置错误
-- 测试结果：提供具体的修复建议
-
-## 💡 开发特性
-
-- **热重载** - 配置文件修改自动生效，无需重启
-- **详细日志** - 完整的请求响应记录
-- **错误追踪** - 详细的错误信息和堆栈
-- **性能监控** - 响应时间和调用次数统计
-
-## 📊 调试数据
-
-### 缓存文件结构
-```
-cache/
-├── 20240214_143022_123_REQUEST_a1b2c3d4.json
-├── 20240214_143025_456_RESPONSE_a1b2c3d4.json
-├── CALLS_20240214.json
-└── ...
-```
-
-### 调试面板功能
-- 今日调用次数实时更新
-- 最后更新时间显示
-- 自动刷新（5秒间隔）
-- JSON格式统计数据
-
-## 🔧 开发配置
-
-### .env 文件示例
-```bash
-OPENROUTER_API_KEY=sk-or-v1-your-key-here
-CACHE_DIR=./cache
-REFERER_URL=http://localhost:5000
-```
-
-### 调试模式控制
-```bash
-# 启用调试模式
-echo > DEBUG_MODE.txt
-
-# 禁用调试模式
-del DEBUG_MODE.txt
-```
-
-## ⚠️ 开发注意事项
-
-1. **调试数据** - 启用调试模式会产生大量缓存文件
-2. **性能影响** - 文件监控和缓存会轻微影响性能
-3. **本地访问** - 默认只绑定localhost，外网无法访问
-4. **API密钥** - 确保.env文件不要提交到版本控制
-
-## 🧪 开发测试流程
-
-1. **环境准备** - 运行start_proxy.bat安装依赖
-2. **配置密钥** - 设置OPENROUTER_API_KEY
-3. **启动服务** - 启动local_api_proxy.py
-4. **功能测试** - 使用test_local_proxy.py测试
-5. **调试分析** - 访问/debug查看详细信息
-6. **修改迭代** - 修改配置文件，自动重载生效
-
-## 📚 扩展开发
-
-### 添加新API端点
-在local_api_proxy.py中添加路由：
-```python
-@app.route('/custom/endpoint', methods=['POST'])
-def custom_endpoint():
-    # 自定义逻辑
-    return jsonify({"result": "custom response"})
-```
-
-### 修改模型配置
-```python
-# 在chat_completions函数中修改
-openrouter_payload = {
-    "model": "openrouter/deepseek-r1",  # 改为其他模型
-    # ...
-}
-```
-
-这个场景适合日常开发、功能测试和问题调试。
+### 调试界面问题
+- **访问失败**：确保代理服务正在运行在5000端口
+- **调试模式未启用**：创建 `DEBUG_MODE.txt` 文件
+- **缓存未配置**：在 `.env` 中添加 `CACHE_DIR` 配置

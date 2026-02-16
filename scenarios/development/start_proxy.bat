@@ -23,5 +23,6 @@ if errorlevel 1 (
 echo.
 echo Dependencies check completed, starting service...
 echo.
+cd /d "%~dp0\..\.."
 python local_api_proxy.py
 pause
