@@ -443,3 +443,296 @@ OpenRouter API error: 401 Client Error: Unauthorized for url: https://openrouter
 - ✅ 强调了性能监控和调试能力的重要性
 
 **文档更新完成时间：** 2026-02-15
+
+
+## 2026-02-17 - 上级无反应问题修复
+**修复时间：** 2026-02-17
+**问题来源：** 分析 `R:\api_proxy_cache` 下的日志
+
+### 问题诊断
+根据日志分析发现以下问题导致"上级无反应"：
+
+1. **超时设置过短**
+   - 原设置：30秒
+   - 问题：OpenRouter API 在高负载时可能超过30秒
+   - 结果：所有超过30秒的请求都被中断
+
+2. **重试机制不完善**
+   - 原设置：只有2次尝试，重试条件过于严格
+   - 问题：临时故障无法自动恢复
+   - 结果：一次失败就返回错误
+
+3. **并发控制阻塞**
+   - 原设置：达到最大并发数时无限期等待
+   - 问题：上游响应缓慢时，所有新请求被阻塞
+   - 结果：客户端无法获得及时的错误反馈
+
+4. **缺少心跳检测**
+   - 原设置：无法主动检测上游连接状态
+   - 问题：无法区分"上游无反应"和"网络故障"
+   - 结果：无法提前发现问题
+
+### 修复方案
+
+#### 1. 增强重试机制 ✅
+```python
+max_retries = 3              # 增加到3次尝试
+timeout_base = 45            # 基础超时45秒
+timeout_retry = 60           # 重试时60秒
+```
+
+**改进点：**
+- 超时错误自动重试（指数退避：1s, 2s, 4s）
+- 连接错误自动重试
+- 5xx 服务器错误自动重试
+- 4xx 客户端错误不重试
+
+#### 2. 修复并发阻塞 ✅
+```python
+max_wait_time = 120  # 最多等待120秒
+```
+
+**改进点：**
+- 等待超时后返回 503 错误而不是无限等待
+- 每5秒打印一次等待状态
+- 减少轮询间隔（0.5s）以更快响应
+
+#### 3. 连接池优化 ✅
+```python
+adapter = HTTPAdapter(
+    max_retries=retry_strategy,
+    pool_connections=10,
+    pool_maxsize=10
+)
+```
+
+**改进点：**
+- 复用 TCP 连接，减少握手开销
+- 支持并发连接
+- 自动处理连接超时
+
+#### 4. 心跳检测端点 ✅
+```
+GET /health/upstream
+```
+
+**功能：**
+- 检测上游 API 连接状态
+- 返回响应时间（毫秒）
+- 区分超时、连接错误、HTTP错误
+
+### 修改的文件
+- `local_api_proxy.py` - 核心修复
+  - 导入 HTTPAdapter 和 Retry
+  - 配置连接池和重试策略
+  - 增强 execute_with_retry 函数
+  - 修复 chat_completions 并发控制
+  - 添加 health_upstream 心跳检测
+
+### 新增文件
+- `UPSTREAM_TIMEOUT_FIX.md` - 详细修复说明文档
+
+### 性能改进
+
+| 指标 | 原版本 | 修复后 |
+|------|--------|--------|
+| 基础超时 | 30s | 45s |
+| 重试次数 | 1次 | 3次 |
+| 并发等待超时 | 无限 | 120s |
+| 连接复用 | 否 | 是 |
+| 心跳检测 | 无 | 有 |
+
+### 使用建议
+
+1. **监控上游连接**
+   ```bash
+   curl http://localhost:5000/health/upstream
+   ```
+
+2. **调整并发限制**
+   编辑 `.env` 文件：
+   ```
+   MAX_CONCURRENT_REQUESTS=10
+   ```
+
+3. **启用调试模式**
+   创建 `DEBUG_MODE.txt` 文件查看详细重试日志
+
+4. **处理 503 错误**
+   说明服务器并发请求过多，需要增加 MAX_CONCURRENT_REQUESTS
+
+### 测试验证
+- ✅ 代码语法检查通过
+- ✅ 导入依赖检查通过
+- ✅ 重试逻辑完整
+- ✅ 并发控制有超时保护
+- ✅ 心跳检测端点可用
+
+**修复完成时间：** 2026-02-17
+**修复版本：** v2.0
+
+---
+
+## 2026-02-17 - reasoning字段处理和调试界面增强
+**更新时间：** 2026-02-17
+
+### 问题诊断
+用户反馈在 http://localhost:5000/debug 测试聊天时显示"无回复内容"，但日志目录 R:\api_proxy_cache 下有完整的响应文件。
+
+#### 日志分析结果
+检查了 `R:\api_proxy_cache\20260217_182356_904_RESPONSE_16d59a33.json`：
+
+**发现的问题：**
+1. **API确实返回了响应** - 响应文件存在且状态正常
+2. **但 `content` 字段是空的** - `"content": ""`
+3. **实际内容在 `reasoning` 字段中** - 包含完整的AI思考过程
+4. **`finish_reason: "length"`** - 因为达到1000个token限制而停止
+
+**响应结构示例：**
+```json
+{
+  "choices": [{
+    "message": {
+      "content": "",
+      "reasoning": "完整的AI思考过程..."
+    }
+  }]
+}
+```
+
+#### 根本原因
+某些模型（如 nvidia/nemotron 系列）会在 `reasoning` 字段中返回思考过程，而 `content` 字段可能为空。前端代码只读取 `content` 字段，导致显示"无回复内容"。
+
+### 修复方案
+
+#### 1. reasoning字段自动处理 ✅
+在 [local_api_proxy.py:337-341](file:///d:/ks_ws/git-root/ks1-simple-api/local_api_proxy.py#L337-L341) 添加逻辑：
+
+```python
+# 如果 content 为空但有 reasoning,则将 reasoning 复制到 content
+for choice in response_data.get("choices", []):
+    message = choice.get("message", {})
+    if not message.get("content") and message.get("reasoning"):
+        message["content"] = message["reasoning"]
+```
+
+**改进点：**
+- 自动检测 content 为空的情况
+- 自动将 reasoning 内容复制到 content
+- 确保客户端能正常获取回复内容
+
+#### 2. 调试界面参数可调 ✅
+在调试面板的测试聊天页面添加 max_tokens 参数控制：
+
+**新增功能：**
+- 参数输入框：默认1000，范围100-4000，步长100
+- 参数说明：显示参数作用和后端修改位置
+- 实时生效：无需重启服务
+
+**修改位置：**
+- 前端界面：[local_api_proxy.py:1030-1040](file:///d:/ks_ws/git-root/ks1-simple-api/local_api_proxy.py#L1030-L1040)
+- 参数使用：[local_api_proxy.py:1160](file:///d:/ks_ws/git-root/ks1-simple-api/local_api_proxy.py#L1160)
+
+**使用方法：**
+1. 访问 `http://localhost:5000/debug`
+2. 切换到"测试聊天"标签
+3. 在"Max Tokens"输入框中调整参数值
+4. 发送消息测试效果
+
+### 文档更新
+
+#### 更新的文档
+1. **README.md**
+   - 新增"reasoning 字段自动处理"章节
+   - 新增"调试界面参数可调"章节
+   - 添加相关代码位置链接
+
+2. **API_PROXY_README.md**
+   - 更新测试聊天页面功能说明
+   - 添加参数可调和参数说明特性
+   - 在API响应示例中添加 reasoning 字段处理说明
+
+### 功能特性
+
+#### reasoning字段处理
+- ✅ 自动检测 content 为空的情况
+- ✅ 自动将 reasoning 内容复制到 content
+- ✅ 确保客户端能正常获取回复内容
+- ✅ 适用于所有返回 reasoning 字段的模型
+
+#### 调试界面参数可调
+- ✅ 默认值：1000
+- ✅ 可调范围：100-4000
+- ✅ 步长：100
+- ✅ 实时生效，无需重启
+- ✅ 显示参数说明和修改位置
+
+### 测试验证
+- ✅ reasoning字段自动处理逻辑正确
+- ✅ 前端参数输入框功能正常
+- ✅ 参数值正确传递到后端
+- ✅ 文档更新完整准确
+
+**更新完成时间：** 2026-02-17
+**更新版本：** v2.1
+
+---
+
+## 2026-02-17 - 守护进程文件管理改进
+**更新时间：** 2026-02-17
+
+### 改进内容
+用户要求将 `daemon.log` 和 `daemon.pid` 默认放在 `CACHE_DIR` 目录下，与API代理的缓存文件保持一致。
+
+#### 实施的改进
+1. **支持 CACHE_DIR 环境变量**
+   - 修改位置：[daemon.py:12-14](file:///d:/ks_ws/git-root/ks1-simple-api/daemon.py#L12-L14)
+   - 修改内容：读取 `CACHE_DIR` 环境变量，如果未设置则使用 `SCRIPT_DIR`
+   - 效果：支持通过环境变量自定义守护进程文件位置
+
+2. **自动创建 CACHE_DIR 目录**
+   - 修改位置：[daemon.py:154-159](file:///d:/ks_ws/git-root/ks1-simple-api/daemon.py#L154-L159)
+   - 修改内容：启动时检查 `CACHE_DIR` 是否存在，不存在则自动创建
+   - 效果：确保目录存在，避免启动失败
+
+3. **增强日志输出**
+   - 修改位置：[daemon.py:182-186](file:///d:/ks_ws/git-root/ks1-simple-api/daemon.py#L182-L186)
+   - 修改内容：添加 `Cache directory` 和 `PID file` 路径输出
+   - 效果：便于问题排查和监控
+
+#### 文件位置对比
+
+**改进前：**
+```
+项目根目录/
+├── daemon.log          ← 固定在根目录
+├── daemon.pid          ← 固定在根目录
+├── local_api_proxy.py
+└── ...
+```
+
+**改进后（使用 CACHE_DIR=r:\api_proxy_cache）：**
+```
+r:\api_proxy_cache/
+├── daemon.log          ← 与缓存文件在同一目录
+├── daemon.pid          ← 与缓存文件在同一目录
+├── 20260217_143709_853_REQUEST_*.json
+├── 20260217_143718_998_ERROR_*.json
+├── CALLS_20260217.json
+└── ...
+```
+
+#### 优势总结
+- ✅ **集 中管理**：所有缓存相关文件在同一目录
+- ✅ **灵活配置**：支持通过 `CACHE_DIR` 环境变量自定义位置
+- ✅ **自动化**：自动创建 `CACHE_DIR` 目录
+- ✅ **日志增强**：显示所有关键路径信息
+- ✅ **向后兼容**：未设置 `CACHE_DIR` 时行为不变
+
+#### 文档更新
+- 创建：[DAEMON_IMPROVEMENT.md](file:///d:/ks_ws/git-root/ks1-simple-api/DAEMON_IMPROVEMENT.md)
+- 更新：[README.md](file:///d:/ks_ws/git-root/ks1-simple-api/README.md#L178-L207)
+- 更新：[API_PROXY_README.md](file:///d:/ks_ws/git-root/ks1-simple-api/API_PROXY_README.md#L301-L330)
+
+**更新完成时间：** 2026-02-17
+**更新版本：** v2.2
