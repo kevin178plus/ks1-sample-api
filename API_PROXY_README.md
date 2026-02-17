@@ -182,6 +182,12 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 }
 ```
 
+**🆕 特殊说明：reasoning 字段处理**
+
+某些模型（如 nvidia/nemotron 系列）会在 `reasoning` 字段中返回思考过程，而 `content` 字段可能为空。代理会自动检测这种情况，当 `content` 为空但存在 `reasoning` 时，自动将 `reasoning` 的内容复制到 `content` 字段中，确保客户端能正常获取回复内容。
+
+**相关代码位置：** [local_api_proxy.py:337-341](file:///d:/ks_ws/git-root/ks1-simple-api/local_api_proxy.py#L337-L341)
+
 ### GET /v1/models
 
 列出可用模型
@@ -218,12 +224,15 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 - **实时状态指示**：显示发送状态和加载进度
 - **错误友好提示**：详细显示错误信息和响应状态
 - **便捷操作**：支持 Enter 键快速发送
+- **🆕 参数可调**：可实时调整 max_tokens 参数（默认1000，范围100-4000）
+- **🆕 参数说明**：显示参数说明和后端修改位置标注
 
 **使用方法：**
 1. 启动代理服务
 2. 访问 `http://localhost:5000/debug`
 3. 点击"测试聊天"标签开始对话测试
 4. 查看AI回复和详细的响应时间数据
+5. 根据需要调整 max_tokens 参数来控制回复长度
 
 ## 调试模式详解
 
@@ -265,16 +274,62 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 
 ```json
 {
-  "date": "20240214",
-  "count": 42,
-  "last_updated": "2024-02-14T10:30:45.123456"
+  "date": "20260216",
+  "total": 10,
+  "success": 7,
+  "failed": 2,
+  "timeout": 1,
+  "retry": 3,
+  "last_updated": "2026-02-16T20:30:45.123456"
 }
 ```
+
+**字段说明:**
+| 字段 | 说明 |
+|------|------|
+| `total` | 总调用次数 |
+| `success` | 成功次数 |
+| `failed` | 失败次数 |
+| `timeout` | 超时次数 |
+| `retry` | 自动重试次数 |
 
 **查看方式:**
 
 - 直接访问 `http://localhost:5000/debug` 打开网页面板
 - 或访问 `http://localhost:5000/debug/stats` 获取 JSON 数据
+
+### 守护进程
+
+支持守护进程模式，异常退出时自动重启：
+
+**启动:**
+```bash
+# 方式1: 命令行
+python daemon.py start
+
+# 方式2: 双击
+010-start_proxy_daemon-start.bat
+```
+
+**管理:**
+```bash
+python daemon.py status   # 查看状态
+python daemon.py stop    # 停止
+python daemon.py restart # 重启
+```
+
+**特性:**
+- 单例保护：防止重复启动
+- 自动重启：异常退出自动重启（最多10次/分钟）
+- 日志记录：写入 `daemon.log`
+- **🆕 集中管理**：`daemon.log` 和 `daemon.pid` 默认放在 `CACHE_DIR` 目录
+- **🆕 灵活配置**：支持通过 `CACHE_DIR` 环境变量自定义位置
+
+**文件位置:**
+- 如果设置了 `CACHE_DIR`：`{CACHE_DIR}/daemon.log` 和 `{CACHE_DIR}/daemon.pid`
+- 如果未设置 `CACHE_DIR`：项目根目录的 `daemon.log` 和 `daemon.pid`
+
+详见：[DAEMON_IMPROVEMENT.md](./DAEMON_IMPROVEMENT.md)
 
 ## 配置示例
 
