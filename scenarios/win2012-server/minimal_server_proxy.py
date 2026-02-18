@@ -123,6 +123,150 @@ def stats():
         "uptime": "running"
     })
 
+@app.route('/debug', methods=['GET'])
+def debug_page():
+    """简化版调试页面 - 最小化内存占用"""
+    html = """
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>API 代理调试面板</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 20px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        h1, h2 {
+            color: #333;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status-ok {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .status-warning {
+            background-color: #fff3cd;
+            color: #856404;
+        }
+        textarea {
+            width: 100%;
+            height: 100px;
+            margin-bottom: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .response {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>API 代理调试面板</h1>
+        <div class="status status-ok">
+            <strong>服务状态:</strong> 运行中
+        </div>
+        <div class="status status-warning">
+            <strong>版本:</strong> 最小化版本 (Windows Server 2012 R2)
+        </div>
+    </div>
+
+    <div class="container">
+        <h2>API 测试</h2>
+        <p>输入消息内容测试 API:</p>
+        <textarea id="message" placeholder="输入你的消息...">你好，请介绍一下自己。</textarea>
+        <button onclick="testAPI()">发送请求</button>
+        <div id="response" class="response" style="display:none;"></div>
+    </div>
+
+    <div class="container">
+        <h2>API 端点</h2>
+        <ul>
+            <li><strong>聊天完成:</strong> POST /v1/chat/completions</li>
+            <li><strong>模型列表:</strong> GET /v1/models</li>
+            <li><strong>健康检查:</strong> GET /health</li>
+            <li><strong>统计信息:</strong> GET /stats</li>
+        </ul>
+    </div>
+
+    <script>
+        async function testAPI() {
+            const message = document.getElementById('message').value;
+            const responseDiv = document.getElementById('response');
+            
+            responseDiv.style.display = 'block';
+            responseDiv.textContent = '发送中...';
+            
+            try {
+                const response = await fetch('/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        model: 'openrouter/free',
+                        messages: [
+                            {
+                                role: 'user',
+                                content: message
+                            }
+                        ],
+                        max_tokens: 1000
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.choices && data.choices.length > 0) {
+                    responseDiv.textContent = '回复: ' + data.choices[0].message.content;
+                } else if (data.error) {
+                    responseDiv.textContent = '错误: ' + data.error;
+                } else {
+                    responseDiv.textContent = '未知响应: ' + JSON.stringify(data, null, 2);
+                }
+            } catch (error) {
+                responseDiv.textContent = '请求失败: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
+    """
+    return html
+
 if __name__ == '__main__':
     print("=" * 50)
     print("最小化 API 代理服务")
