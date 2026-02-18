@@ -38,21 +38,15 @@ if not exist ".env" (
     echo OPENROUTER_API_KEY=sk-or-v1-your-key-here
     echo.
     set /p create_env=是否现在创建.env文件？(y/n): 
-    if /i "!create_env!"=="y" (
+    if /i "%create_env%"=="y" (
         set /p api_key=请输入你的OpenRouter API Key: 
-        echo OPENROUTER_API_KEY=!api_key! > .env
+        echo OPENROUTER_API_KEY=%api_key% > .env
         echo ✅ .env文件已创建
     )
 )
 
 echo.
-echo 4. 配置防火墙（仅5000端口）...
-netsh advfirewall firewall delete rule name="API Proxy Safe" >nul 2>&1
-netsh advfirewall firewall add rule name="API Proxy Safe" dir=in action=allow protocol=TCP localport=5000 >nul 2>&1
-echo ✅ 防火墙规则已配置
-
-echo.
-echo 5. 启动API代理服务...
+echo 4. 启动API代理服务...
 echo 服务地址: http://localhost:5000
 echo 健康检查: http://localhost:5000/health
 echo 按 Ctrl+C 停止服务
