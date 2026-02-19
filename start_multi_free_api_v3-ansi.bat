@@ -6,19 +6,19 @@ title ks1-multi-free-api-v3
 cd /d "%~dp0"
 
 echo ============================================
-echo      ╢рFree API┤·└э╖■╬ё╞Ї╢п╜┼▒╛ (V3)
+echo      я┐╜я┐╜Free APIя┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜┼▒я┐╜ (V3)
 echo ============================================
 echo.
 
-REM ╔ш╓├─м╚╧╢╦┐┌
+REM я┐╜я┐╜я┐╜я┐╜─мя┐╜╧╢╦┐я┐╜
 set PORT=5000
 
-REM ╝ь▓щ╩╟╖ё╔ш╓├┴╦╫╘╢и╥х╢╦┐┌
+REM я┐╜я┐╜я┐╜я┐╜╟╖я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜╘╢я┐╜я┐╜я┐╜╦┐я┐╜
 if not "%1"=="" (
     set PORT=%1
 )
 
-echo [╞Ї╢п] ╢╦┐┌: %PORT%
+echo [я┐╜я┐╜я┐╜я┐╜] я┐╜╦┐я┐╜: %PORT%
 echo.
 
 echo Checking dependencies...
@@ -39,24 +39,24 @@ if errorlevel 1 (
 )
 echo.
 
-REM ╝ь▓щ╡ў╩╘─г╩╜
+REM я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜─г╩╜
 if exist DEBUG_MODE.txt (
-    echo [╡ў╩╘] ╡ў╩╘─г╩╜╥╤╞Ї╙├
-    echo [╡ў╩╘] ┐╔╖├╬╩ http://localhost:%PORT%/debug ▓щ┐┤╡ў╩╘├ц░х
+    echo [я┐╜я┐╜я┐╜я┐╜] я┐╜я┐╜я┐╜я┐╜─г╩╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜
+    echo [я┐╜я┐╜я┐╜я┐╜] я┐╜╔╖я┐╜я┐╜я┐╜ http://localhost:%PORT%/debug я┐╜щ┐┤я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜
     echo.
 ) else (
-    echo [╡ў╩╘] ╡ў╩╘─г╩╜╬┤╞Ї╙├ ^(┤┤╜и DEBUG_MODE.txt ╬─╝■╥╘╞Ї╙├^)
+    echo [я┐╜я┐╜я┐╜я┐╜] я┐╜я┐╜я┐╜я┐╜─г╩╜╬┤я┐╜я┐╜я┐╜я┐╜ ^(я┐╜я┐╜я┐╜я┐╜ DEBUG_MODE.txt я┐╜─╝я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜^)
     echo.
 )
 
 echo Dependency check complete, starting service...
 echo.
-echo [╞Ї╢п] ╒¤╘┌╞Ї╢п╢рFree API┤·└э╖■╬ё (V3)...
+echo [я┐╜я┐╜я┐╜я┐╜] я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜Free APIя┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜ (V3)...
 echo.
 
-REM ╞Ї╢п╖■╬ё
-python multi_free_api_proxy_v3.py
+REM я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜
+python multi_free_api_proxy\multi_free_api_proxy_v3.py
 
 echo.
-echo ╖■╬ё╥╤═г╓╣
+echo я┐╜я┐╜я┐╜я┐╜я┐╜я┐╜═г╓╣
 pause

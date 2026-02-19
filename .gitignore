@@ -2,3 +2,5 @@
 /__pycache__
 /daemon.log
 /daemon.pid
+/free_api_test/*.env
+/free_api_test/*/test_result.txt

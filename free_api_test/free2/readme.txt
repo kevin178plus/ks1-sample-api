@@ -8,7 +8,7 @@
 ## 一天总共可用200次
 
 ## key
-您的免费API Key为: sk-RJeQTUufTH2oUcdLLyOIMZbxFQNwVZdi622xyZaCEJV7ltLt
+您的免费API Key为: sk-RJ***Lt
 
 ## 转发Host1
 	https://api.chatanywhere.tech	(国内中转，延时更低)

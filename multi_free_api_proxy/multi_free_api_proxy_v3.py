@@ -228,6 +228,7 @@ load_env()
 FREE1_API_KEY = os.getenv("FREE1_API_KEY")
 FREE2_API_KEY = os.getenv("FREE2_API_KEY")
 FREE3_API_KEY = os.getenv("FREE3_API_KEY")
+FREE4_API_KEY = os.getenv("FREE4_API_KEY")
 
 DEBUG_MODE = check_debug_mode()
 CACHE_DIR = os.getenv("CACHE_DIR")
@@ -298,7 +299,7 @@ def test_api_startup(api_name):
 
 def load_api_configs():
     """从.env加载API配置"""
-    global FREE_APIS, FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY
+    global FREE_APIS, FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY, FREE4_API_KEY
 
     # 直接配置API，不从free*目录读取
     FREE_APIS = {
@@ -334,6 +335,19 @@ def load_api_configs():
             "base_url": "https://free.v36.cm",
             "model": "gpt-3.5-turbo",
             "use_proxy": False,  # free3不使用代理
+            "available": False,
+            "last_test_time": None,
+            "last_test_result": None,
+            "success_count": 0,
+            "failure_count": 0,
+            "consecutive_failures": 0  # 连续失败次数
+        },
+        "free4": {
+            "name": "free4",
+            "api_key": FREE4_API_KEY,
+            "base_url": "https://api.mistral.ai",
+            "model": "mistral-small-latest",
+            "use_proxy": False,  # free4不使用代理
             "available": False,
             "last_test_time": None,
             "last_test_result": None,

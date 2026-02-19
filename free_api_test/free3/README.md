@@ -11,7 +11,7 @@
 ## 一天总共可用200次
 
 ## key
-您的免费API Key为: sk-t76OXjTTXmPRzpNj8aF6F5F0508b488fB087A51c760e7dD8
+您的免费API Key为: sk-t76****dD8
 
 ## API地址
 	本项目当前API地址已更新为 https://free.v36.cm 请知晓！
