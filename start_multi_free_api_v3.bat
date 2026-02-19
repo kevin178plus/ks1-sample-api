@@ -55,7 +55,7 @@ echo [启动] 正在启动多Free API代理服务 (V3)...
 echo.
 
 REM 启动服务
-python multi_free_api_proxy_v3.py
+python multi_free_api_proxy\multi_free_api_proxy_v3.py
 
 echo.
 echo 服务已停止
