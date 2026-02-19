@@ -1,24 +1,24 @@
 @echo off
 setlocal enabledelayedexpansion
 
-title ks1-multi-free-api
+title ks1-multi-free-api-v3
 
 cd /d "%~dp0"
 
 echo ============================================
-echo      å¤šFree APIä»£ç†æœåŠ¡å¯åŠ¨è„šæœ¬
+echo      ¶àFree API´úÀí·þÎñÆô¶¯½Å±¾ (V3)
 echo ============================================
 echo.
 
-REM è®¾ç½®é»˜è®¤ç«¯å£
+REM ÉèÖÃÄ¬ÈÏ¶Ë¿Ú
 set PORT=5000
 
-REM æ£€æŸ¥æ˜¯å¦è®¾ç½®äº†è‡ªå®šä¹‰ç«¯å£
+REM ¼ì²éÊÇ·ñÉèÖÃÁË×Ô¶¨Òå¶Ë¿Ú
 if not "%1"=="" (
     set PORT=%1
 )
 
-echo [å¯åŠ¨] ç«¯å£: %PORT%
+echo [Æô¶¯] ¶Ë¿Ú: %PORT%
 echo.
 
 echo Checking dependencies...
@@ -39,24 +39,24 @@ if errorlevel 1 (
 )
 echo.
 
-REM æ£€æŸ¥è°ƒè¯•æ¨¡å¼
+REM ¼ì²éµ÷ÊÔÄ£Ê½
 if exist DEBUG_MODE.txt (
-    echo [è°ƒè¯•] è°ƒè¯•æ¨¡å¼å·²å¯ç”¨
-    echo [è°ƒè¯•] å¯è®¿é—® http://localhost:%PORT%/debug æŸ¥çœ‹è°ƒè¯•é¢æ¿
+    echo [µ÷ÊÔ] µ÷ÊÔÄ£Ê½ÒÑÆôÓÃ
+    echo [µ÷ÊÔ] ¿É·ÃÎÊ http://localhost:%PORT%/debug ²é¿´µ÷ÊÔÃæ°å
     echo.
 ) else (
-    echo [è°ƒè¯•] è°ƒè¯•æ¨¡å¼æœªå¯ç”¨ ^(åˆ›å»º DEBUG_MODE.txt æ–‡ä»¶ä»¥å¯ç”¨^)
+    echo [µ÷ÊÔ] µ÷ÊÔÄ£Ê½Î´ÆôÓÃ ^(´´½¨ DEBUG_MODE.txt ÎÄ¼þÒÔÆôÓÃ^)
     echo.
 )
 
 echo Dependency check complete, starting service...
 echo.
-echo [å¯åŠ¨] æ­£åœ¨å¯åŠ¨å¤šFree APIä»£ç†æœåŠ¡...
+echo [Æô¶¯] ÕýÔÚÆô¶¯¶àFree API´úÀí·þÎñ (V3)...
 echo.
 
-REM å¯åŠ¨æœåŠ¡
-python multi_free_api_proxy.py
+REM Æô¶¯·þÎñ
+python multi_free_api_proxy_v3.py
 
 echo.
-echo æœåŠ¡å·²åœæ­¢
+echo ·þÎñÒÑÍ£Ö¹
 pause

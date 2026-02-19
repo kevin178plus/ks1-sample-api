@@ -43,7 +43,7 @@ ACTIVE_LOCK = threading.Lock()
 FREE_APIS = {}
 AVAILABLE_APIS = deque()
 API_LOCK = threading.Lock()
-API_TEST_INTERVAL = 300
+MAX_CONSECUTIVE_FAILURES = 3  # 连续失败次数阈值，超过此值标记API无效
 
 # 调用历史记录
 CALL_HISTORY = deque(maxlen=10)
@@ -312,7 +312,8 @@ def load_api_configs():
             "last_test_time": None,
             "last_test_result": None,
             "success_count": 0,
-            "failure_count": 0
+            "failure_count": 0,
+            "consecutive_failures": 0  # 连续失败次数
         },
         "free2": {
             "name": "free2",
@@ -324,7 +325,8 @@ def load_api_configs():
             "last_test_time": None,
             "last_test_result": None,
             "success_count": 0,
-            "failure_count": 0
+            "failure_count": 0,
+            "consecutive_failures": 0  # 连续失败次数
         },
         "free3": {
             "name": "free3",
@@ -336,7 +338,8 @@ def load_api_configs():
             "last_test_time": None,
             "last_test_result": None,
             "success_count": 0,
-            "failure_count": 0
+            "failure_count": 0,
+            "consecutive_failures": 0  # 连续失败次数
         }
     }
 
@@ -377,6 +380,47 @@ def get_next_available_api():
         AVAILABLE_APIS.rotate(-1)
 
         return api_name
+
+def mark_api_failure(api_name):
+    """标记API失败，连续失败超过阈值则从可用列表移除"""
+    global FREE_APIS, AVAILABLE_APIS, MAX_CONSECUTIVE_FAILURES
+    
+    if api_name not in FREE_APIS:
+        return
+    
+    api_config = FREE_APIS[api_name]
+    api_config["consecutive_failures"] = api_config.get("consecutive_failures", 0) + 1
+    api_config["failure_count"] += 1
+    
+    consecutive = api_config["consecutive_failures"]
+    print(f"[API状态] {api_name} 连续失败次数: {consecutive}/{MAX_CONSECUTIVE_FAILURES}")
+    
+    if consecutive >= MAX_CONSECUTIVE_FAILURES:
+        with API_LOCK:
+            if api_name in AVAILABLE_APIS:
+                AVAILABLE_APIS.remove(api_name)
+                api_config["available"] = False
+                api_config["last_test_result"] = f"marked invalid after {consecutive} consecutive failures"
+                print(f"[API状态] {api_name} 已标记为无效（连续失败{consecutive}次）")
+                print(f"[API状态] 剩余可用API: {list(AVAILABLE_APIS)}")
+
+def mark_api_success(api_name):
+    """标记API成功，重置连续失败计数"""
+    global FREE_APIS
+    
+    if api_name not in FREE_APIS:
+        return
+    
+    api_config = FREE_APIS[api_name]
+    api_config["consecutive_failures"] = 0
+    api_config["success_count"] += 1
+    
+    # 如果API不在可用列表中，重新添加
+    with API_LOCK:
+        if api_name not in AVAILABLE_APIS and api_config.get("api_key"):
+            AVAILABLE_APIS.append(api_name)
+            api_config["available"] = True
+            print(f"[API状态] {api_name} 已恢复并重新加入可用列表")
 
 def execute_with_free_api(data, message_id):
     """使用Free API执行请求"""
@@ -440,7 +484,8 @@ def execute_with_free_api(data, message_id):
             result = response.json()
             print(f"[请求] 成功 {attempt_str}")
 
-            api_config["success_count"] += 1
+            # 标记成功，重置连续失败计数
+            mark_api_success(api_name)
 
             return result, retry_count
 
@@ -450,7 +495,8 @@ def execute_with_free_api(data, message_id):
             print(error_msg)
             update_daily_counter("timeout")
 
-            api_config["failure_count"] += 1
+            # 标记失败
+            mark_api_failure(api_name)
 
             if attempt < max_retries - 1:
                 retry_count += 1
@@ -465,7 +511,8 @@ def execute_with_free_api(data, message_id):
             error_msg = f"[请求] 连接错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
             print(error_msg)
 
-            api_config["failure_count"] += 1
+            # 标记失败
+            mark_api_failure(api_name)
 
             if attempt < max_retries - 1:
                 retry_count += 1
@@ -481,7 +528,8 @@ def execute_with_free_api(data, message_id):
             error_msg = f"[请求] HTTP错误 {status_code} (尝试 {attempt + 1}/{max_retries}): {str(e)}"
             print(error_msg)
 
-            api_config["failure_count"] += 1
+            # 标记失败
+            mark_api_failure(api_name)
 
             if 500 <= status_code < 600 and attempt < max_retries - 1:
                 retry_count += 1
@@ -497,7 +545,8 @@ def execute_with_free_api(data, message_id):
             last_error = e
             print(f"[请求] 失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
 
-            api_config["failure_count"] += 1
+            # 标记失败
+            mark_api_failure(api_name)
             break
 
     raise last_error
@@ -717,6 +766,572 @@ def debug_apis():
         "available_apis": list(AVAILABLE_APIS)
     })
 
+@app.route('/debug/concurrency', methods=['GET'])
+def debug_concurrency():
+    """获取并发状态和调用历史"""
+    debug_enabled = check_debug_mode()
+    if not debug_enabled:
+        return jsonify({"error": "Debug mode not enabled"}), 403
+    
+    with ACTIVE_LOCK:
+        active = ACTIVE_REQUESTS
+    
+    with HISTORY_LOCK:
+        history = list(CALL_HISTORY)
+        history_data = [
+            {
+                "success": call["success"],
+                "timestamp": call["timestamp"].isoformat(),
+                "date": call["timestamp"].date().isoformat(),
+                "error_type": call.get("error_type", None)
+            }
+            for call in history
+        ]
+    
+    with LAST_ERROR_LOCK:
+        last_error = dict(LAST_ERROR)
+    
+    today = datetime.now().date()
+    today_calls = [call for call in history if call["timestamp"].date() == today]
+    today_success = sum(1 for call in today_calls if call["success"])
+    today_failed = sum(1 for call in today_calls if not call["success"])
+    
+    return jsonify({
+        "concurrency": {
+            "active_requests": active,
+            "max_concurrent": MAX_CONCURRENT_REQUESTS,
+            "available_slots": MAX_CONCURRENT_REQUESTS - active
+        },
+        "call_history": history_data,
+        "today_stats": {
+            "total": len(today_calls),
+            "success": today_success,
+            "failed": today_failed
+        },
+        "last_error": last_error,
+        "free_apis": {
+            "total": len(FREE_APIS),
+            "available": len(AVAILABLE_APIS),
+            "api_list": list(AVAILABLE_APIS)
+        }
+    })
+
+@app.route('/debug', methods=['GET'])
+def debug_page():
+    """调试页面"""
+    debug_enabled = check_debug_mode()
+    if not debug_enabled:
+        return "Debug mode not enabled", 403
+    html = """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <title>多Free API代理调试面板</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                max-width: 1000px;
+                margin: 20px auto;
+                padding: 20px;
+                background-color: #f5f5f5;
+            }
+            .container {
+                background-color: white;
+                padding: 20px;
+                border-radius: 8px;
+                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                margin-bottom: 20px;
+            }
+            h1, h2 {
+                color: #333;
+                border-bottom: 2px solid #007bff;
+                padding-bottom: 10px;
+            }
+            .stats {
+                background-color: #e7f3ff;
+                padding: 15px;
+                border-radius: 5px;
+                margin: 20px 0;
+            }
+            .stat-item {
+                margin: 10px 0;
+                font-size: 16px;
+            }
+            .stat-label {
+                font-weight: bold;
+                color: #333;
+            }
+            .stat-value {
+                color: #007bff;
+                font-size: 24px;
+                font-weight: bold;
+            }
+            .refresh-btn {
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 10px 20px;
+                border-radius: 5px;
+                cursor: pointer;
+                font-size: 14px;
+            }
+            .refresh-btn:hover {
+                background-color: #0056b3;
+            }
+            .timestamp {
+                color: #666;
+                font-size: 12px;
+                margin-top: 10px;
+            }
+            .error-status {
+                background-color: #fff3cd;
+                border: 1px solid #ffc107;
+                border-radius: 5px;
+                padding: 15px;
+                margin: 20px 0;
+            }
+            .error-status h3 {
+                color: #856404;
+                margin-top: 0;
+            }
+            .error-item {
+                margin: 8px 0;
+                font-size: 14px;
+            }
+            .error-label {
+                font-weight: bold;
+                color: #856404;
+            }
+            .error-value {
+                color: #333;
+            }
+            .error-status.timeout {
+                background-color: #fff3cd;
+                border-color: #ffc107;
+            }
+            .error-status.upstream_unreachable {
+                background-color: #f8d7da;
+                border-color: #f5c6cb;
+            }
+            .error-status.api_error {
+                background-color: #f8d7da;
+                border-color: #f5c6cb;
+            }
+            .error-status.concurrent_limit {
+                background-color: #cce5ff;
+                border-color: #b8daff;
+            }
+            .error-status.proxy_error {
+                background-color: #e2e3e5;
+                border-color: #d6d8db;
+            }
+            .chat-container {
+                display: flex;
+                flex-direction: column;
+                height: 500px;
+                border: 1px solid #ddd;
+                border-radius: 8px;
+                margin: 20px 0;
+            }
+            .chat-messages {
+                flex: 1;
+                overflow-y: auto;
+                padding: 15px;
+                background-color: #f9f9f9;
+            }
+            .message {
+                margin: 10px 0;
+                padding: 10px;
+                border-radius: 8px;
+            }
+            .message.user {
+                background-color: #e3f2fd;
+                text-align: right;
+                margin-left: 20%;
+            }
+            .message.assistant {
+                background-color: #f1f8e9;
+                margin-right: 20%;
+            }
+            .message.error {
+                background-color: #ffebee;
+                color: #c62828;
+                margin-right: 20%;
+            }
+            .message .time {
+                font-size: 11px;
+                color: #666;
+                margin-top: 5px;
+            }
+            .message .latency {
+                font-size: 11px;
+                color: #007bff;
+                font-weight: bold;
+            }
+            .chat-input {
+                display: flex;
+                padding: 10px;
+                border-top: 1px solid #ddd;
+                background-color: white;
+            }
+            .chat-input input {
+                flex: 1;
+                padding: 8px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                font-size: 14px;
+            }
+            .chat-input button {
+                margin-left: 10px;
+                padding: 8px 16px;
+                background-color: #007bff;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+            }
+            .chat-input button:hover {
+                background-color: #0056b3;
+            }
+            .chat-input button:disabled {
+                background-color: #ccc;
+                cursor: not-allowed;
+            }
+            .loading {
+                color: #666;
+                font-style: italic;
+            }
+            .tabs {
+                display: flex;
+                border-bottom: 1px solid #ddd;
+                margin-bottom: 20px;
+            }
+            .tab {
+                padding: 10px 20px;
+                cursor: pointer;
+                border-bottom: 2px solid transparent;
+            }
+            .tab.active {
+                border-bottom-color: #007bff;
+                color: #007bff;
+                font-weight: bold;
+            }
+            .tab-content {
+                display: none;
+            }
+            .tab-content.active {
+                display: block;
+            }
+            .api-status {
+                margin: 10px 0;
+                padding: 10px;
+                border-radius: 5px;
+            }
+            .api-status.available {
+                background-color: #d4edda;
+                border: 1px solid #c3e6cb;
+            }
+            .api-status.unavailable {
+                background-color: #f8d7da;
+                border: 1px solid #f5c6cb;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 多Free API代理调试面板</h1>
+            
+            <div class="tabs">
+                <div class="tab active" onclick="showTab('stats')">统计信息</div>
+                <div class="tab" onclick="showTab('apis')">API状态</div>
+                <div class="tab" onclick="showTab('chat')">测试聊天</div>
+            </div>
+            
+            <!-- 统计信息标签页 -->
+            <div id="stats-tab" class="tab-content active">
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">总调用次数:</span>
+                        <span class="stat-value" id="totalCount">-</span>
+                        <span> 次</span>
+                    </div>
+                    <div class="stat-item" style="display: flex; gap: 20px;">
+                        <div>
+                            <span class="stat-label">✅ 成功:</span>
+                            <span class="stat-value" id="successCount" style="color: #28a745;">-</span>
+                            <span> 次</span>
+                        </div>
+                        <div>
+                            <span class="stat-label">❌ 失败:</span>
+                            <span class="stat-value" id="failedCount" style="color: #dc3545;">-</span>
+                            <span> 次</span>
+                        </div>
+                        <div>
+                            <span class="stat-label">⏱️ 超时:</span>
+                            <span class="stat-value" id="timeoutCount" style="color: #ffc107;">-</span>
+                            <span> 次</span>
+                        </div>
+                        <div>
+                            <span class="stat-label">🔄 重试:</span>
+                            <span class="stat-value" id="retryCount" style="color: #17a2b8;">-</span>
+                            <span> 次</span>
+                        </div>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">日期:</span>
+                        <span id="date">-</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">最后更新:</span>
+                        <span id="lastUpdated">-</span>
+                    </div>
+                    <div class="timestamp" id="refreshTime"></div>
+                </div>
+                
+                <div id="error-status" class="error-status" style="display: none;">
+                    <h3>⚠️ 当前状态</h3>
+                    <div class="error-item">
+                        <span class="error-label">错误类型:</span>
+                        <span id="errorType" class="error-value">-</span>
+                    </div>
+                    <div class="error-item">
+                        <span class="error-label">错误信息:</span>
+                        <span id="errorMessage" class="error-value">-</span>
+                    </div>
+                    <div class="error-item">
+                        <span class="error-label">发生时间:</span>
+                        <span id="errorTime" class="error-value">-</span>
+                    </div>
+                </div>
+                
+                <button class="refresh-btn" onclick="refreshStats()">刷新统计</button>
+            </div>
+            
+            <!-- API状态标签页 -->
+            <div id="apis-tab" class="tab-content">
+                <h2>📡 Free API 状态</h2>
+                <div id="apiList"></div>
+                <button class="refresh-btn" onclick="refreshApis()" style="margin-top: 15px;">刷新API状态</button>
+            </div>
+            
+            <!-- 测试聊天标签页 -->
+            <div id="chat-tab" class="tab-content">
+                <h2>💬 AI 聊天测试</h2>
+                <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 5px; font-size: 13px; color: #666;">
+                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认1000。
+                </div>
+                <div style="margin-bottom: 10px;">
+                    <label for="maxTokensInput" style="font-weight: bold; color: #333;">Max Tokens:</label>
+                    <input type="number" id="maxTokensInput" value="1000" min="100" max="4000" step="100" 
+                           style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 100px; margin-left: 10px;">
+                    <span style="color: #666; font-size: 12px;">(默认: 1000, 范围: 100-4000)</span>
+                </div>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMessages"></div>
+                    <div class="chat-input">
+                        <input type="text" id="messageInput" placeholder="输入您的问题..." onkeypress="handleKeyPress(event)">
+                        <button id="sendBtn" onclick="sendMessage()">发送</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            function showTab(tabName) {
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.querySelectorAll('.tab').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                document.getElementById(tabName + '-tab').classList.add('active');
+                event.target.classList.add('active');
+            }
+            
+            function refreshStats() {
+                Promise.all([
+                    fetch('/debug/stats').then(r => r.json()),
+                    fetch('/debug/concurrency').then(r => r.json())
+                ])
+                    .then(([statsData, concurrencyData]) => {
+                        document.getElementById('totalCount').textContent = statsData.total || 0;
+                        document.getElementById('successCount').textContent = statsData.success || 0;
+                        document.getElementById('failedCount').textContent = statsData.failed || 0;
+                        document.getElementById('timeoutCount').textContent = statsData.timeout || 0;
+                        document.getElementById('retryCount').textContent = statsData.retry || 0;
+                        document.getElementById('date').textContent = statsData.date || '-';
+                        document.getElementById('lastUpdated').textContent = statsData.last_updated ? new Date(statsData.last_updated).toLocaleString() : '-';
+                        document.getElementById('refreshTime').textContent = '刷新于: ' + new Date().toLocaleTimeString();
+                        
+                        const errorStatus = document.getElementById('error-status');
+                        const lastError = concurrencyData.last_error;
+                        
+                        if (lastError && lastError.type && lastError.type !== 'none') {
+                            errorStatus.style.display = 'block';
+                            errorStatus.className = 'error-status ' + lastError.type;
+                            
+                            const errorTypeNames = {
+                                'none': '无错误',
+                                'timeout': '⏱️ 超时',
+                                'upstream_unreachable': '🔴 上游服务器无法连接',
+                                'api_error': '❌ API 错误',
+                                'concurrent_limit': '⚠️ 并发限制',
+                                'proxy_error': '🔗 代理错误',
+                                'unknown': '❓ 未知错误'
+                            };
+                            
+                            document.getElementById('errorType').textContent = errorTypeNames[lastError.type] || lastError.type;
+                            document.getElementById('errorMessage').textContent = lastError.message || '-';
+                            document.getElementById('errorTime').textContent = lastError.timestamp ? new Date(lastError.timestamp).toLocaleString() : '-';
+                        } else {
+                            errorStatus.style.display = 'none';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('totalCount').textContent = '错误';
+                    });
+            }
+            
+            function refreshApis() {
+                fetch('/debug/apis')
+                    .then(r => r.json())
+                    .then(data => {
+                        const apiListDiv = document.getElementById('apiList');
+                        apiListDiv.innerHTML = '';
+                        
+                        const apis = data.free_apis || {};
+                        const availableApis = data.available_apis || [];
+                        
+                        for (const [name, config] of Object.entries(apis)) {
+                            const isAvailable = availableApis.includes(name);
+                            const div = document.createElement('div');
+                            div.className = 'api-status ' + (isAvailable ? 'available' : 'unavailable');
+                            div.innerHTML = `
+                                <strong>${name}</strong>
+                                <span style="float: right;">${isAvailable ? '✅ 可用' : '❌ 不可用'}</span>
+                                <br><small>模型: ${config.model || 'gpt-3.5-turbo'}</small>
+                                <br><small>成功: ${config.success_count || 0} | 失败: ${config.failure_count || 0}</small>
+                                ${config.last_test_result ? '<br><small>最后测试: ' + config.last_test_result + '</small>' : ''}
+                            `;
+                            apiListDiv.appendChild(div);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('apiList').innerHTML = '<p style="color: red;">获取API状态失败</p>';
+                    });
+            }
+            
+            function addMessage(role, content, latency = null, error = false) {
+                const messagesContainer = document.getElementById('chatMessages');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${role} ${error ? 'error' : ''}`;
+                
+                let contentHtml = content.replace(/\\n/g, '<br>');
+                let metadataHtml = `<div class="time">${new Date().toLocaleString()}</div>`;
+                
+                if (latency !== null) {
+                    metadataHtml += `<div class="latency">响应时间: ${latency}ms</div>`;
+                }
+                
+                messageDiv.innerHTML = contentHtml + metadataHtml;
+                messagesContainer.appendChild(messageDiv);
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
+            
+            function sendMessage() {
+                const input = document.getElementById('messageInput');
+                const message = input.value.trim();
+                const sendBtn = document.getElementById('sendBtn');
+                const maxTokensInput = document.getElementById('maxTokensInput');
+                
+                if (!message) return;
+                
+                addMessage('user', message);
+                
+                input.value = '';
+                sendBtn.disabled = true;
+                sendBtn.textContent = '发送中...';
+                
+                addMessage('assistant', '<span class="loading">AI 正在思考...</span>', null, false);
+                
+                const startTime = Date.now();
+                
+                fetch('/v1/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        model: 'any-model',
+                        messages: [
+                            { role: 'user', content: message }
+                        ],
+                        max_tokens: parseInt(maxTokensInput.value) || 1000,
+                        temperature: 0.7
+                    })
+                })
+                .then(response => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    const loadingMessages = document.querySelectorAll('.message .loading');
+                    loadingMessages.forEach(msg => msg.parentElement.remove());
+                    
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || `HTTP ${response.status}`);
+                        });
+                    }
+                    
+                    return response.json();
+                })
+                .then(data => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    const content = data.choices?.[0]?.message?.content || '无回复内容';
+                    addMessage('assistant', content, latency);
+                })
+                .catch(error => {
+                    const endTime = Date.now();
+                    const latency = endTime - startTime;
+                    
+                    const loadingMessages = document.querySelectorAll('.message .loading');
+                    loadingMessages.forEach(msg => msg.parentElement.remove());
+                    
+                    addMessage('assistant', `错误: ${error.message}`, latency, true);
+                })
+                .finally(() => {
+                    sendBtn.disabled = false;
+                    sendBtn.textContent = '发送';
+                });
+            }
+            
+            function handleKeyPress(event) {
+                if (event.key === 'Enter') {
+                    sendMessage();
+                }
+            }
+            
+            // 页面加载时刷新统计
+            refreshStats();
+            refreshApis();
+            
+            // 每30秒自动刷新统计
+            setInterval(refreshStats, 30000);
+            
+            // 初始化聊天界面
+            document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用多Free API聊天测试！您可以在这里直接测试代理功能。</div>';
+        </script>
+    </body>
+    </html>
+    """
+    return html
+
 def main():
     """主函数"""
     ensure_cache_dir()
@@ -724,12 +1339,8 @@ def main():
     # 直接从.env加载API配置
     load_api_configs()
 
-    # 启动时测试所有API
+    # 启动时测试所有API（仅启动时测试一次）
     test_all_apis_startup()
-
-    # 启动API测试工作线程
-    test_thread = threading.Thread(target=api_test_worker, daemon=True)
-    test_thread.start()
 
     # 启动文件监控
     observer = start_file_watcher()
@@ -742,6 +1353,7 @@ def main():
 
     print(f"[启动] 多Free API代理服务启动在端口 {port}")
     print(f"[启动] 可用API: {len(AVAILABLE_APIS)}/{len(FREE_APIS)}")
+    print(f"[启动] API连续失败{MAX_CONSECUTIVE_FAILURES}次后将自动标记为无效")
 
     try:
         app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
@@ -750,17 +1362,6 @@ def main():
         observer.stop()
         observer.join()
         print("[停止] 服务已停止")
-
-def api_test_worker():
-    """定期测试API的工作线程"""
-    global API_TEST_INTERVAL
-
-    while True:
-        try:
-            time.sleep(API_TEST_INTERVAL)
-            test_all_apis_startup()
-        except Exception as e:
-            print(f"[测试] API测试工作线程错误: {e}")
 
 if __name__ == "__main__":
     main()
