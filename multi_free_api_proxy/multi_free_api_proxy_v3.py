@@ -14,6 +14,7 @@ import socket
 import requests
 import re
 import subprocess
+import importlib.util
 from pathlib import Path
 from datetime import datetime
 from collections import deque
@@ -96,7 +97,7 @@ def check_debug_mode():
     """检查是否启用调试模式"""
     return Path('DEBUG_MODE.txt').exists()
 
-def save_message_cache(message_type, message_id, data):
+def save_message_cache(message_type, message_id, data, api_name=None):
     """保存消息到缓存目录"""
     if not DEBUG_MODE or not CACHE_DIR:
         return
@@ -109,15 +110,22 @@ def save_message_cache(message_type, message_id, data):
         filename = f"{timestamp}_{message_type}_{message_id}.json"
         filepath = cache_path / filename
 
-        with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump({
-                'timestamp': datetime.now().isoformat(),
-                'type': message_type,
-                'message_id': message_id,
-                'data': data
-            }, f, indent=2, ensure_ascii=False)
+        cache_data = {
+            'timestamp': datetime.now().isoformat(),
+            'type': message_type,
+            'message_id': message_id,
+            'data': data
+        }
 
-        print(f"[缓存] 已保存 {message_type} 消息: {filename}")
+        # 如果提供了 api_name，添加到缓存数据中
+        if api_name:
+            cache_data['api_name'] = api_name
+
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(cache_data, f, indent=2, ensure_ascii=False)
+
+        api_info = f" [{api_name}]" if api_name else ""
+        print(f"[缓存] 已保存 {message_type}{api_info} 消息: {filename}")
     except Exception as e:
         print(f"[缓存错误] 保存消息失败: {e}")
 
@@ -239,6 +247,7 @@ FREE2_API_KEY = os.getenv("FREE2_API_KEY")
 FREE3_API_KEY = os.getenv("FREE3_API_KEY")
 FREE4_API_KEY = os.getenv("FREE4_API_KEY")
 FREE5_API_KEY = os.getenv("FREE5_API_KEY")
+FREE6_API_KEY = os.getenv("FREE6_API_KEY")
 
 DEBUG_MODE = check_debug_mode()
 CACHE_DIR = os.getenv("CACHE_DIR")
@@ -342,82 +351,103 @@ def test_api_startup(api_name):
         return False
 
 def load_api_configs():
-    """从.env加载API配置"""
-    global FREE_APIS, FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY, FREE4_API_KEY, FREE5_API_KEY
+    """从free_api_test目录自动加载API配置"""
+    global FREE_APIS, FREE1_API_KEY, FREE5_API_KEY
 
-    # 直接配置API，不从free*目录读取
-    FREE_APIS = {
-        "free1": {
-            "name": "free1",
-            "api_key": FREE1_API_KEY,
-            "base_url": "https://openrouter.ai",
-            "model": "openrouter/free",
-            "use_proxy": True,  # free1使用代理
-            "available": False,
-            "last_test_time": None,
-            "last_test_result": None,
-            "success_count": 0,
-            "failure_count": 0,
-            "consecutive_failures": 0  # 连续失败次数
-        },
-        "free2": {
-            "name": "free2",
-            "api_key": FREE2_API_KEY,
-            "base_url": "https://api.chatanywhere.tech",
-            "model": "gpt-3.5-turbo",
-            "use_proxy": False,  # free2不使用代理
-            "available": False,
-            "last_test_time": None,
-            "last_test_result": None,
-            "success_count": 0,
-            "failure_count": 0,
-            "consecutive_failures": 0  # 连续失败次数
-        },
-        "free3": {
-            "name": "free3",
-            "api_key": FREE3_API_KEY,
-            "base_url": "https://free.v36.cm",
-            "model": "gpt-3.5-turbo",
-            "use_proxy": False,  # free3不使用代理
-            "available": False,
-            "last_test_time": None,
-            "last_test_result": None,
-            "success_count": 0,
-            "failure_count": 0,
-            "consecutive_failures": 0  # 连续失败次数
-        },
-        "free4": {
-            "name": "free4",
-            "api_key": FREE4_API_KEY,
-            "base_url": "https://api.mistral.ai",
-            "model": "mistral-small-latest",
-            "use_proxy": False,  # free4不使用代理
-            "available": False,
-            "last_test_time": None,
-            "last_test_result": None,
-            "success_count": 0,
-            "failure_count": 0,
-            "consecutive_failures": 0  # 连续失败次数
-        },
-        "free5": {
-            "name": "free5",
-            "api_key": FREE5_API_KEY,
-            "base_url": "iflow",
-            "model": "iflow",
-            "use_proxy": False,  # free5使用 iflow SDK，不需要代理
-            "available": False,
-            "last_test_time": None,
-            "last_test_result": None,
-            "success_count": 0,
-            "failure_count": 0,
-            "consecutive_failures": 0,  # 连续失败次数
-            "use_sdk": True  # 标记使用 iflow SDK
-        }
-    }
+    # 扫描free_api_test目录（使用绝对路径）
+    script_dir = Path(__file__).parent
+    free_api_dir = script_dir.parent / "free_api_test"
+
+    print(f"[调试] 脚本目录: {script_dir}")
+    print(f"[调试] API目录: {free_api_dir}")
+    print(f"[调试] API目录存在: {free_api_dir.exists()}")
+
+    if not free_api_dir.exists():
+        print(f"[警告] 未找到 free_api_test 目录: {free_api_dir}")
+        return
+
+    # 初始化API配置字典
+    FREE_APIS = {}
+
+    # 扫描所有free*子目录
+    api_dirs = list(free_api_dir.glob("free*"))
+    print(f"[调试] 找到 {len(api_dirs)} 个 API 目录: {[d.name for d in api_dirs]}")
+
+    for api_dir in sorted(api_dirs):
+        api_name = api_dir.name
+        config_file = api_dir / "config.py"
+
+        # 跳过没有config.py的目录
+        if not config_file.exists():
+            print(f"[跳过] {api_name}: 未找到 config.py")
+            continue
+
+        print(f"[调试] 正在加载 {api_name} 的配置...")
+
+        # 动态导入配置模块
+        try:
+            spec = importlib.util.spec_from_file_location(
+                f"config_{api_name}",
+                str(config_file)
+            )
+            config_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_module)
+
+            # 提取配置信息
+            api_key = getattr(config_module, "API_KEY", None)
+            base_url = getattr(config_module, "BASE_URL", None)
+            model_name = getattr(config_module, "MODEL_NAME", None)
+            use_proxy = getattr(config_module, "USE_PROXY", False)
+            use_sdk = getattr(config_module, "USE_SDK", False)
+
+            print(f"[调试] {api_name} 配置: API_KEY={api_key[:10] if api_key else None}..., BASE_URL={base_url}, MODEL={model_name}")
+
+            # 验证必要配置
+            if not base_url or not model_name:
+                print(f"[跳过] {api_name}: 配置不完整 (缺少 base_url 或 model_name)")
+                continue
+
+            # API_KEY 可以为空，但在实际调用时会失败
+            if not api_key:
+                print(f"[警告] {api_name}: API_KEY 未设置")
+
+            # 特殊处理free1和free5
+            if api_name == "free1":
+                use_proxy = True  # free1强制使用代理
+            elif api_name == "free5":
+                use_sdk = True  # free5强制使用SDK
+
+            # 构建API配置
+            FREE_APIS[api_name] = {
+                "name": api_name,
+                "api_key": api_key,
+                "base_url": base_url,
+                "model": model_name,
+                "use_proxy": use_proxy,
+                "available": False,
+                "last_test_time": None,
+                "last_test_result": None,
+                "success_count": 0,
+                "failure_count": 0,
+                "consecutive_failures": 0
+            }
+
+            # 添加SDK标记
+            if use_sdk:
+                FREE_APIS[api_name]["use_sdk"] = True
+
+            print(f"[加载] {api_name}: {model_name} @ {base_url}")
+            print(f"[调试] {api_name} 已添加到 FREE_APIS, 当前总数: {len(FREE_APIS)}")
+
+        except Exception as e:
+            print(f"[错误] 加载 {api_name} 配置失败: {e}")
+            continue
 
     print(f"[配置] 已加载 {len(FREE_APIS)} 个API配置")
     for api_name, api_config in FREE_APIS.items():
-        print(f"[配置] {api_name}: API_KEY={api_config['api_key'][:10]}...{api_config['api_key'][-4:]}, BASE_URL={api_config['base_url']}, MODEL={api_config['model']}, USE_PROXY={api_config['use_proxy']}")
+        proxy_info = "代理" if api_config.get('use_proxy') else "直连"
+        sdk_info = "SDK" if api_config.get('use_sdk') else "HTTP"
+        print(f"[配置] {api_name}: {sdk_info}/{proxy_info}, MODEL={api_config['model']}")
 
 def test_all_apis_startup():
     """启动时测试所有API"""
@@ -500,6 +530,7 @@ def execute_with_free_api(data, message_id):
 
     retry_count = 0
     last_error = None
+    used_api_name = None  # 记录最终使用的API名称
 
     max_retries = 3
     timeout_base = 45
@@ -574,8 +605,9 @@ def execute_with_free_api(data, message_id):
 
                 # 标记成功，重置连续失败计数
                 mark_api_success(api_name)
+                used_api_name = api_name
 
-                return result, retry_count
+                return result, retry_count, used_api_name
 
             except Exception as e:
                 last_error = e
@@ -637,8 +669,9 @@ def execute_with_free_api(data, message_id):
 
             # 标记成功，重置连续失败计数
             mark_api_success(api_name)
+            used_api_name = api_name
 
-            return result, retry_count
+            return result, retry_count, used_api_name
 
         except requests.exceptions.Timeout as e:
             last_error = e
@@ -755,7 +788,7 @@ def chat_completions():
         if DEBUG_MODE:
             save_message_cache("REQUEST", message_id, data)
 
-        result, retry_count = execute_with_free_api(data, message_id)
+        result, retry_count, used_api_name = execute_with_free_api(data, message_id)
 
         response_data = {
             "id": result.get("id", ""),
@@ -774,9 +807,13 @@ def chat_completions():
         with HISTORY_LOCK:
             CALL_HISTORY.append({"success": True, "timestamp": datetime.now()})
 
+        # 更新成功计数
+        update_daily_counter("success")
+
         if DEBUG_MODE:
             response_data["_retry_count"] = retry_count
-            save_message_cache("RESPONSE", message_id, response_data)
+            response_data["_api_name"] = used_api_name
+            save_message_cache("RESPONSE", message_id, response_data, used_api_name)
 
         return jsonify(response_data)
 
@@ -786,10 +823,16 @@ def chat_completions():
 
         if "timeout" in error_str or "timed out" in error_str:
             error_type = ERROR_TYPES["TIMEOUT"]
+            update_daily_counter("timeout")
         elif "connection" in error_str or "refused" in error_str:
             error_type = ERROR_TYPES["UPSTREAM_UNREACHABLE"]
         elif "proxy" in error_str:
             error_type = ERROR_TYPES["PROXY_ERROR"]
+        else:
+            error_type = ERROR_TYPES["API_ERROR"]
+
+        # 更新失败计数
+        update_daily_counter("failed")
 
         with LAST_ERROR_LOCK:
             LAST_ERROR["type"] = error_type
@@ -805,7 +848,8 @@ def chat_completions():
             CALL_HISTORY.append({"success": False, "timestamp": datetime.now(), "error_type": error_type})
 
         if DEBUG_MODE:
-            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response)
+            error_response["_api_name"] = getattr(locals(), 'used_api_name', 'unknown')
+            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response, error_response.get("_api_name"))
         return jsonify(error_response), 502
     except Exception as e:
         with LAST_ERROR_LOCK:
@@ -818,8 +862,12 @@ def chat_completions():
         with HISTORY_LOCK:
             CALL_HISTORY.append({"success": False, "timestamp": datetime.now(), "error_type": ERROR_TYPES["UNKNOWN"]})
 
+        # 更新失败计数
+        update_daily_counter("failed")
+
         if DEBUG_MODE:
-            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response)
+            error_response["_api_name"] = getattr(locals(), 'used_api_name', 'unknown')
+            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response, error_response.get("_api_name"))
         return jsonify(error_response), 400
     finally:
         with ACTIVE_LOCK:

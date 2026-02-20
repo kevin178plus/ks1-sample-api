@@ -64,12 +64,56 @@ FREE6_API_KEY=your_csdn_api_key
 
 ### Free API配置
 
-Free API的配置存储在`free_api_test`目录下的各个子目录中,如`free2`、`free3`等。每个子目录应包含:
+Free API的配置存储在`free_api_test`目录下的各个子目录中,如`free1`、`free2`、`free3`等。每个子目录应包含:
 
-1. `test_api.py`文件,其中包含API的配置信息(API_KEY和BASE_URL)
-2. README文件(README.md、readme.txt或README.txt),其中包含支持的模型列表
+1. `config.py`文件,其中包含API的配置信息
+2. `test_api.py`文件,用于测试API是否可用
+3. README文件(README.md、readme.txt或README.txt),其中包含支持的模型列表
 
-示例`free2/test_api.py`:
+#### config.py 配置格式
+
+每个API的`config.py`文件应包含以下配置:
+
+```python
+# API配置
+import os
+
+API_KEY = os.getenv("FREE*_API_KEY")
+BASE_URL = "https://api.example.com"
+MODEL_NAME = "model-name"
+USE_PROXY = False  # 是否使用代理
+USE_SDK = False  # 是否使用SDK
+```
+
+**配置说明**:
+- `API_KEY`: 从环境变量读取API密钥
+- `BASE_URL`: API的基础URL(不包含`/v1/`路径)
+- `MODEL_NAME`: 使用的模型名称
+- `USE_PROXY`: 是否使用HTTP代理(默认False)
+- `USE_SDK`: 是否使用SDK调用(默认False)
+
+**特殊处理**:
+- `free1`: 强制使用代理(`USE_PROXY = True`)
+- `free5`: 强制使用SDK(`USE_SDK = True`)
+
+#### 自动发现机制
+
+服务启动时会自动:
+1. 扫描`free_api_test`目录下的所有`free*`子目录
+2. 读取每个子目录的`config.py`文件
+3. 提取配置信息并构建API配置字典
+4. 测试每个API是否可用
+5. 将可用的API加入服务队列
+
+**优势**:
+- 无需修改代码即可添加新API
+- 配置集中管理,易于维护
+- 支持动态加载和卸载API
+- 配置格式统一,易于理解
+
+#### test_api.py 文件
+
+每个API的`test_api.py`文件用于测试API是否可用:
 
 ```python
 API_KEY = "sk-xxxxxxxxxxxx"
@@ -186,6 +230,37 @@ touch DEBUG_MODE.txt
 - **API状态**: 所有Free API的可用状态、成功/失败次数
 - **测试聊天**: 直接在页面上测试API功能
 
+#### 统计信息说明
+
+统计信息记录在`CACHE_DIR`目录下的`CALLS_{日期}.json`文件中，包含:
+
+- `date`: 统计日期(YYYYMMDD格式)
+- `total`: 总调用次数(成功+失败+超时)
+- `success`: 成功次数
+- `failed`: 失败次数
+- `timeout`: 超时次数
+- `retry`: 重试次数
+- `last_updated`: 最后更新时间
+
+**计数规则**:
+- 每次请求成功时，`success`和`total`各+1
+- 每次请求失败时，`failed`和`total`各+1
+- 每次请求超时时，`timeout`和`total`各+1
+- 每次重试时，`retry`+1(不影响total)
+
+**统计示例**:
+```json
+{
+  "date": "20260220",
+  "total": 10,
+  "success": 7,
+  "failed": 2,
+  "timeout": 1,
+  "retry": 3,
+  "last_updated": "2026-02-20T22:30:00.123456"
+}
+```
+
 ### 调试API端点
 
 #### 调试统计
@@ -195,6 +270,67 @@ touch DEBUG_MODE.txt
 **请求示例**:
 ```bash
 curl http://localhost:5000/debug/stats
+```
+
+#### 调试日志
+
+启用调试模式后，所有请求和响应都会被记录到`CACHE_DIR`目录，文件名格式为:
+
+```
+{时间戳}_{类型}_{消息ID}.json
+```
+
+**日志文件包含**:
+- `timestamp`: 请求时间
+- `type`: 消息类型(REQUEST/RESPONSE/ERROR)
+- `message_id`: 消息ID
+- `api_name`: 使用的API名称(如free1、free2等)
+- `data`: 请求数据或响应数据
+
+**示例日志文件**:
+```json
+{
+  "timestamp": "2026-02-20T22:33:06.607",
+  "type": "REQUEST",
+  "message_id": "7001c957",
+  "api_name": "free2",
+  "data": {
+    "model": "gpt-3.5-turbo",
+    "messages": [...]
+  }
+}
+```
+
+**响应日志示例**:
+```json
+{
+  "timestamp": "2026-02-20T22:33:07.123",
+  "type": "RESPONSE",
+  "message_id": "7001c957",
+  "api_name": "free2",
+  "data": {
+    "id": "chatcmpl-abc123",
+    "model": "gpt-3.5-turbo",
+    "choices": [...],
+    "_retry_count": 0,
+    "_api_name": "free2"
+  }
+}
+```
+
+**错误日志示例**:
+```json
+{
+  "timestamp": "2026-02-20T22:33:08.456",
+  "type": "ERROR",
+  "message_id": "abc12345",
+  "api_name": "unknown",
+  "data": {
+    "error": "Free API error: Connection timeout",
+    "error_type": "timeout",
+    "_api_name": "unknown"
+  }
+}
 ```
 
 #### API状态
@@ -258,15 +394,55 @@ curl http://localhost:5000/debug/concurrency
 
 ## 扩展
 
-### 添加 HTTP API
+### 添加新 API
 
-要添加新的 HTTP Free API,只需在`free_api_test`目录下创建一个新的子目录,并在其中创建一个`test_api.py`文件,包含API的配置信息。服务会在下次启动时自动检测并测试新的API。
+要添加新的 Free API,只需在`free_api_test`目录下创建一个新的子目录,并在其中创建配置文件。服务会在下次启动时自动检测并测试新的API。
 
-示例`free7/test_api.py`:
+#### 步骤
+
+1. **创建API目录**: 在`free_api_test`目录下创建新目录(如`free7`)
+2. **创建config.py**: 在新目录中创建`config.py`文件
+3. **配置环境变量**: 在`.env`文件中添加API密钥
+4. **重启服务**: 重启服务以加载新API
+
+#### config.py 示例
 
 ```python
-API_KEY = "sk-xxxxxxxxxxxx"
+# API配置
+import os
+
+API_KEY = os.getenv("FREE7_API_KEY")
 BASE_URL = "https://api.example.com"
+MODEL_NAME = "gpt-3.5-turbo"
+USE_PROXY = False  # 是否使用代理
+USE_SDK = False  # 是否使用SDK
+```
+
+#### .env 配置
+
+```properties
+# 新API的密钥
+FREE7_API_KEY=your_api_key_here
+```
+
+#### 特殊API配置
+
+**使用代理的API** (如free1):
+```python
+API_KEY = os.getenv("FREE1_API_KEY")
+BASE_URL = "https://openrouter.ai"
+MODEL_NAME = "openrouter/free"
+USE_PROXY = True  # 使用代理
+USE_SDK = False
+```
+
+**使用SDK的API** (如free5):
+```python
+API_KEY = os.getenv("FREE5_API_KEY", "iflow-sdk")  # SDK可能不需要密钥
+BASE_URL = "iflow"
+MODEL_NAME = "iflow"
+USE_PROXY = False
+USE_SDK = True  # 使用SDK
 ```
 
 ### 添加 SDK API
@@ -330,10 +506,21 @@ if use_sdk:
 - 适合动态管理多个API
 
 ### V3版 (multi_free_api_proxy_v3.py)
-- 从`.env`文件读取API配置 (FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY, FREE4_API_KEY, FREE5_API_KEY, FREE6_API_KEY)
+- 从`free_api_test`目录自动加载API配置
+- 使用统一的`config.py`配置文件格式
+- 自动发现和加载所有`free*`子目录
 - 支持代理配置 (free1使用代理, free2/free3/free4/free5/free6不使用)
 - 支持 SDK 调用 (free5 使用 iflow SDK)
-- 适合固定配置场景
+- 完整的统计信息记录 (成功/失败/超时/重试)
+- 调试日志中记录使用的API名称
+- 适合动态扩展和管理多个API
+
+**V3 版本主要特性**:
+1. **自动发现**: 无需修改代码即可添加新API
+2. **统一配置**: 所有API使用相同的配置格式
+3. **完整统计**: 记录所有请求的成功/失败/超时/重试次数
+4. **调试增强**: 日志中显示使用的API名称
+5. **易于扩展**: 添加新API只需创建目录和配置文件
 
 ## 支持的 Free API
 
