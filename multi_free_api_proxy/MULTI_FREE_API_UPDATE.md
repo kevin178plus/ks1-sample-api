@@ -5,9 +5,9 @@
 ### 1. 修改了.env文件
 添加了以下Free API Keys:
 ```
-FREE1_API_KEY=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
-FREE2_API_KEY=REVOKED_KEY
-FREE3_API_KEY=REVOKED_KEY
+FREE1_API_KEY=sk-or-v1-e38xxxxxxxxxxxxxx2
+FREE2_API_KEY=sk-RJexxxxxxxxxxx
+FREE3_API_KEY=sk-t76Oxxxxxxxxxxxxxxxxxx
 ```
 
 ### 2. 修改了free*/test_api.py文件

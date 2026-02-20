@@ -1110,6 +1110,30 @@ def debug_page():
                 background-color: #f8d7da;
                 border: 1px solid #f5c6cb;
             }
+            .auto-refresh-control {
+                margin: 15px 0;
+                padding: 15px;
+                background-color: #f8f9fa;
+                border-radius: 5px;
+                border: 1px solid #dee2e6;
+            }
+            .auto-refresh-control label {
+                font-weight: bold;
+                color: #333;
+                margin-right: 10px;
+            }
+            .auto-refresh-control input[type="number"] {
+                width: 80px;
+                padding: 5px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin: 0 10px;
+            }
+            .auto-refresh-status {
+                margin-left: 10px;
+                font-size: 13px;
+                color: #666;
+            }
         </style>
     </head>
     <body>
@@ -1124,6 +1148,17 @@ def debug_page():
             
             <!-- 统计信息标签页 -->
             <div id="stats-tab" class="tab-content active">
+                <div class="auto-refresh-control">
+                    <label>
+                        <input type="checkbox" id="autoRefreshCheckbox" onchange="toggleAutoRefresh()">
+                        启用自动刷新
+                    </label>
+                    <label for="refreshInterval">
+                        刷新间隔(秒):
+                    </label>
+                    <input type="number" id="refreshInterval" value="30" min="15" max="120" onchange="updateRefreshInterval()">
+                    <span class="auto-refresh-status" id="autoRefreshStatus">自动刷新: 已关闭</span>
+                </div>
                 <div class="stats">
                     <div class="stat-item">
                         <span class="stat-label">总调用次数:</span>
@@ -1395,8 +1430,50 @@ def debug_page():
             refreshStats();
             refreshApis();
             
-            // 每30秒自动刷新统计
-            setInterval(refreshStats, 30000);
+            // 自动刷新相关变量
+            let autoRefreshTimer = null;
+            let autoRefreshEnabled = false;
+            let refreshInterval = 30;
+
+            // 切换自动刷新
+            function toggleAutoRefresh() {
+                const checkbox = document.getElementById('autoRefreshCheckbox');
+                autoRefreshEnabled = checkbox.checked;
+
+                if (autoRefreshEnabled) {
+                    updateRefreshInterval();
+                } else {
+                    if (autoRefreshTimer) {
+                        clearInterval(autoRefreshTimer);
+                        autoRefreshTimer = null;
+                    }
+                    document.getElementById('autoRefreshStatus').textContent = '自动刷新: 已关闭';
+                }
+            }
+
+            // 更新刷新间隔
+            function updateRefreshInterval() {
+                const intervalInput = document.getElementById('refreshInterval');
+                let newInterval = parseInt(intervalInput.value);
+
+                // 验证范围
+                if (newInterval < 15) newInterval = 15;
+                if (newInterval > 120) newInterval = 120;
+
+                refreshInterval = newInterval;
+                intervalInput.value = newInterval;
+
+                if (autoRefreshEnabled) {
+                    // 清除旧的定时器
+                    if (autoRefreshTimer) {
+                        clearInterval(autoRefreshTimer);
+                    }
+
+                    // 设置新的定时器
+                    autoRefreshTimer = setInterval(refreshStats, refreshInterval * 1000);
+                    document.getElementById('autoRefreshStatus').textContent = `自动刷新: 已启用 (${refreshInterval}秒)`;
+                }
+            }
             
             // 初始化聊天界面
             document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用多Free API聊天测试！您可以在这里直接测试代理功能。</div>';

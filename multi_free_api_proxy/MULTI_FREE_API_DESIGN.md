@@ -15,8 +15,8 @@
 ```
 # Free API Keys
 FREE1_API_KEY=sk-or-v1-xxxxx
-FREE2_API_KEY=REVOKED_KEY
-FREE3_API_KEY=REVOKED_KEY
+FREE2_API_KEY=sk-RJxxxxxxt
+FREE3_API_KEY=sk-t76xxxxxx8
 
 # 代理配置
 HTTP_PROXY=http://127.0.0.1:7897
