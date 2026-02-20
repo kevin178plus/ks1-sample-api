@@ -9,6 +9,7 @@ import sys
 import time
 import uuid
 import threading
+import asyncio
 import socket
 import requests
 import re
@@ -19,6 +20,14 @@ from collections import deque
 from flask import Flask, request, jsonify
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# 导入 iflow_sdk
+try:
+    from iflow_sdk import query as iflow_query
+    IFLOW_SDK_AVAILABLE = True
+except ImportError:
+    IFLOW_SDK_AVAILABLE = False
+    print("[警告] 未找到 iflow_sdk，free5 将不可用。如需使用，请安装: pip install iflow-sdk")
 
 app = Flask(__name__)
 
@@ -229,6 +238,7 @@ FREE1_API_KEY = os.getenv("FREE1_API_KEY")
 FREE2_API_KEY = os.getenv("FREE2_API_KEY")
 FREE3_API_KEY = os.getenv("FREE3_API_KEY")
 FREE4_API_KEY = os.getenv("FREE4_API_KEY")
+FREE5_API_KEY = os.getenv("FREE5_API_KEY")
 
 DEBUG_MODE = check_debug_mode()
 CACHE_DIR = os.getenv("CACHE_DIR")
@@ -247,9 +257,43 @@ def test_api_startup(api_name):
     base_url = api_config["base_url"]
     model = api_config.get("model", "gpt-3.5-turbo")
     use_proxy = api_config.get("use_proxy", False)
+    use_sdk = api_config.get("use_sdk", False)
 
-    print(f"[启动测试] 测试 {api_name} (模型: {model}, 代理: {use_proxy})...")
+    print(f"[启动测试] 测试 {api_name} (模型: {model}, 代理: {use_proxy}, SDK: {use_sdk})...")
 
+    # 如果使用 iflow SDK
+    if use_sdk:
+        if not IFLOW_SDK_AVAILABLE:
+            print(f"[启动测试] {api_name} 不可用: iflow SDK 未安装")
+            api_config["available"] = False
+            api_config["last_test_result"] = "error: iflow SDK 未安装"
+            api_config["failure_count"] += 1
+            return False
+
+        try:
+            # 使用 iflow_sdk 测试
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                response_text = loop.run_until_complete(iflow_query("Hello"))
+            finally:
+                loop.close()
+
+            api_config["last_test_time"] = datetime.now().isoformat()
+            api_config["available"] = True
+            api_config["last_test_result"] = "success"
+            api_config["success_count"] += 1
+            print(f"[启动测试] {api_name} 可用")
+            return True
+        except Exception as e:
+            api_config["available"] = False
+            api_config["last_test_time"] = datetime.now().isoformat()
+            api_config["last_test_result"] = f"error: {str(e)}"
+            api_config["failure_count"] += 1
+            print(f"[启动测试] {api_name} 测试失败: {e}")
+            return False
+
+    # 使用 HTTP API
     try:
         url = f"{base_url}/v1/chat/completions"
         headers = {
@@ -299,7 +343,7 @@ def test_api_startup(api_name):
 
 def load_api_configs():
     """从.env加载API配置"""
-    global FREE_APIS, FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY, FREE4_API_KEY
+    global FREE_APIS, FREE1_API_KEY, FREE2_API_KEY, FREE3_API_KEY, FREE4_API_KEY, FREE5_API_KEY
 
     # 直接配置API，不从free*目录读取
     FREE_APIS = {
@@ -354,6 +398,20 @@ def load_api_configs():
             "success_count": 0,
             "failure_count": 0,
             "consecutive_failures": 0  # 连续失败次数
+        },
+        "free5": {
+            "name": "free5",
+            "api_key": FREE5_API_KEY,
+            "base_url": "iflow",
+            "model": "iflow",
+            "use_proxy": False,  # free5使用 iflow SDK，不需要代理
+            "available": False,
+            "last_test_time": None,
+            "last_test_result": None,
+            "success_count": 0,
+            "failure_count": 0,
+            "consecutive_failures": 0,  # 连续失败次数
+            "use_sdk": True  # 标记使用 iflow SDK
         }
     }
 
@@ -458,7 +516,86 @@ def execute_with_free_api(data, message_id):
         base_url = api_config["base_url"]
         model = api_config.get("model", "gpt-3.5-turbo")
         use_proxy = api_config.get("use_proxy", False)
+        use_sdk = api_config.get("use_sdk", False)
 
+        # 如果使用 iflow SDK
+        if use_sdk:
+            if not IFLOW_SDK_AVAILABLE:
+                raise Exception("iflow SDK 未安装，无法使用 free5")
+
+            try:
+                # 从请求中提取消息
+                messages = data.get("messages", [])
+                if not messages:
+                    raise ValueError("No messages provided")
+
+                # 获取最后一条用户消息
+                user_message = None
+                for msg in reversed(messages):
+                    if msg.get("role") == "user":
+                        user_message = msg.get("content", "")
+                        break
+
+                if not user_message:
+                    raise ValueError("No user message found")
+
+                # 使用 iflow_sdk 查询
+                print(f"[请求] 发送到 {api_name} (模型: {model})")
+
+                # 创建事件循环执行异步查询
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    response_text = loop.run_until_complete(iflow_query(user_message))
+                finally:
+                    loop.close()
+
+                # 构建 OpenAI 兼容格式的响应
+                result = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                    "created": int(time.time()),
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": response_text
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": len(user_message),
+                        "completion_tokens": len(response_text),
+                        "total_tokens": len(user_message) + len(response_text)
+                    }
+                }
+
+                print(f"[请求] 成功")
+
+                # 标记成功，重置连续失败计数
+                mark_api_success(api_name)
+
+                return result, retry_count
+
+            except Exception as e:
+                last_error = e
+                error_msg = f"[请求] 失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
+                print(error_msg)
+
+                # 标记失败
+                mark_api_failure(api_name)
+
+                if attempt < max_retries - 1:
+                    retry_count += 1
+                    update_daily_counter("retry")
+                    wait_time = 2 ** attempt
+                    print(f"[重试] {wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                    continue
+
+                raise last_error
+
+        # 使用 HTTP API
         try:
             url = f"{base_url}/v1/chat/completions"
             headers = {
