@@ -50,6 +50,20 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Features**: Deepseek model access
 - **Documentation**: See [free6/config.py](free6/config.py)
 
+### free7 - NVIDIA API
+- **Provider**: NVIDIA
+- **Base URL**: https://integrate.api.nvidia.com
+- **Models**: Various NVIDIA hosted models
+- **Features**: High-performance GPU-accelerated inference
+- **Documentation**: See [free7/README.md](free7/README.md)
+
+### free8 - Friendli.ai API
+- **Provider**: Friendli.ai
+- **Base URL**: https://api.friendli.ai/serverless/v1
+- **Models**: meta-llama/Llama-3.3-70B-Instruct, Qwen/Qwen3-235B-A22B-Instruct-2507, MiniMaxAI/MiniMax-M2.5, zai-org/GLM-4.7, zai-org/GLM-5
+- **Features**: High-performance LLM service with OpenAI SDK compatibility
+- **Documentation**: See [free8/README.md](free8/README.md)
+
 ## Requirements
 
 - Python 3.7+
@@ -96,6 +110,12 @@ cd ../free5
 python iflow_test.py
 
 cd ../free6
+python test_api.py
+
+cd ../free7
+python test_api.py
+
+cd ../free8
 python test_api.py
 ```
 

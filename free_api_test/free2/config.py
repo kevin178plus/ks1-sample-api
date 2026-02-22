@@ -6,3 +6,11 @@ BASE_URL = "https://api.chatanywhere.tech"
 MODEL_NAME = "gpt-3.5-turbo"
 USE_PROXY = False  # 不使用代理
 USE_SDK = False  # 使用HTTP API
+
+# 响应格式配置
+RESPONSE_FORMAT = {
+    # ChatAnywhere 标准格式，只使用 content 字段
+    "content_fields": ["content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": False
+}

@@ -5,3 +5,5 @@
 /free_api_test/*.env
 /free_api_test/*/test_result.txt
 __pycache__/
+.env
+test_result.txt

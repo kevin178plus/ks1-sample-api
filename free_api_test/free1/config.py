@@ -6,3 +6,11 @@ BASE_URL = "https://openrouter.ai"
 MODEL_NAME = "openrouter/free"
 USE_PROXY = True  # 使用代理
 USE_SDK = False  # 使用HTTP API
+
+# 响应格式配置
+RESPONSE_FORMAT = {
+    # OpenRouter 标准格式，只使用 content 字段
+    "content_fields": ["content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": False
+}

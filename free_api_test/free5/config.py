@@ -7,3 +7,12 @@ BASE_URL = "iflow"
 MODEL_NAME = "iflow"
 USE_PROXY = False  # 不使用代理
 USE_SDK = True  # 使用iflow SDK
+
+# 响应格式配置
+# iflow SDK 返回的是纯文本，不需要特殊处理
+RESPONSE_FORMAT = {
+    # SDK 直接返回文本内容，不需要从字段提取
+    "content_fields": ["content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": False
+}

@@ -17,6 +17,12 @@
 9. **自动模型选择**: 忽略原始请求中的model参数,自动使用每个API支持的第一个模型
 10. **SDK 支持**: 支持使用 SDK 调用 API (如 free5 使用 iflow SDK)
 11. **统一接口**: 所有 API 提供统一的 OpenAI 兼容接口
+12. **灵活的响应格式处理**: 支持不同 API 返回不同格式的响应
+    - 通过 `RESPONSE_FORMAT` 配置定义如何从响应中提取内容
+    - 支持多个内容字段优先级
+    - 支持合并多个字段的内容
+    - 支持 reasoning_content 作为后备字段（适用于 NVIDIA API）
+    - 无需修改代理代码，只需在配置文件中定义响应格式
 
 ## 安装
 
@@ -416,6 +422,59 @@ BASE_URL = "https://api.example.com"
 MODEL_NAME = "gpt-3.5-turbo"
 USE_PROXY = False  # 是否使用代理
 USE_SDK = False  # 是否使用SDK
+
+# 响应格式配置（可选）
+RESPONSE_FORMAT = {
+    # 内容字段优先级列表（按优先级从高到低）
+    "content_fields": ["content"],
+    # 是否需要合并多个字段的内容
+    "merge_fields": False,
+    # 字段分隔符（如果需要合并）
+    "field_separator": "\n\n---\n\n",
+    # 是否在 content 为空时使用 reasoning_content
+    "use_reasoning_as_fallback": False
+}
+```
+
+#### RESPONSE_FORMAT 配置说明
+
+不同 API 可能返回不同格式的响应，`RESPONSE_FORMAT` 配置用于定义如何从响应中提取内容。
+
+**配置项说明**:
+
+- **content_fields**: 内容字段优先级列表（按优先级从高到低）
+  - 标准格式: `["content"]`
+  - NVIDIA API: `["content", "reasoning_content"]`
+
+- **merge_fields**: 是否需要合并多个字段的内容
+  - `False`: 按优先级提取第一个非空字段（默认）
+  - `True`: 合并所有非空字段的内容
+
+- **field_separator**: 字段分隔符（如果需要合并）
+  - 默认: `"\n\n---\n\n"`
+
+- **use_reasoning_as_fallback**: 是否在 content 为空时使用 reasoning_content
+  - `False`: 不使用（默认）
+  - `True`: 当所有 content_fields 都为空时，使用 reasoning_content 作为后备
+
+**不同 API 的配置示例**:
+
+**标准 API** (如 free1, free2):
+```python
+RESPONSE_FORMAT = {
+    "content_fields": ["content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": False
+}
+```
+
+**NVIDIA API** (如 free7):
+```python
+RESPONSE_FORMAT = {
+    "content_fields": ["content", "reasoning_content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": True
+}
 ```
 
 #### .env 配置
@@ -444,6 +503,29 @@ MODEL_NAME = "iflow"
 USE_PROXY = False
 USE_SDK = True  # 使用SDK
 ```
+
+**NVIDIA API** (如free7):
+```python
+API_KEY = os.getenv("FREE7_API_KEY")
+BASE_URL = "https://integrate.api.nvidia.com/"
+MODEL_NAME = "z-ai/glm4.7"
+USE_PROXY = False  # 不使用代理
+USE_SDK = False  # 使用HTTP API
+
+# 响应格式配置
+RESPONSE_FORMAT = {
+    "content_fields": ["content", "reasoning_content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": True
+}
+```
+
+**说明**: 
+- NVIDIA API 可能返回 `content` 为 `null` 的情况
+- 实际内容在 `reasoning_content` 字段中（这是模型的思考过程）
+- 配置 `content_fields` 为 `["content", "reasoning_content"]` 表示优先使用 content，如果为空则使用 reasoning_content
+- 配置 `use_reasoning_as_fallback: True` 表示当所有字段都为空时，使用 reasoning_content 作为后备
+- **注意**: `reasoning_content` 是思考过程，不是最终答案。如果需要最终答案，应该确保 `content` 字段有值（可能需要调整 max_tokens 参数）
 
 ### 添加 SDK API
 
@@ -561,6 +643,18 @@ if use_sdk:
 - **Model**: Deepseek-V3
 - **Use Proxy**: 否
 - **配置**: FREE6_API_KEY
+
+### free7 - NVIDIA API
+- **Base URL**: https://integrate.api.nvidia.com/
+- **Model**: z-ai/glm4.7
+- **Use Proxy**: 否
+- **Use SDK**: 否
+- **配置**: FREE7_API_KEY
+- **特殊说明**: 
+  - NVIDIA API 可能返回 `content` 为 `null` 的情况
+  - 实际内容在 `reasoning_content` 字段中（这是模型的思考过程）
+  - 已配置 RESPONSE_FORMAT 来正确处理这种情况
+  - 建议根据问题复杂度调整 max_tokens 参数（简单问题 1024-2048，复杂问题 4096-8192）
 
 ## 许可证
 

@@ -1,65 +1,55 @@
-"""
-多Free API代理服务
-自动检测、测试和轮换使用多个Free API
-"""
-
 import os
 import json
 import sys
 import time
 import uuid
 import threading
-import asyncio
 import socket
-import requests
-import re
-import subprocess
-import importlib.util
 from pathlib import Path
 from datetime import datetime
 from collections import deque
 from flask import Flask, request, jsonify
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-
-# 导入 iflow_sdk
-try:
-    from iflow_sdk import query as iflow_query
-    IFLOW_SDK_AVAILABLE = True
-except ImportError:
-    IFLOW_SDK_AVAILABLE = False
-    print("[警告] 未找到 iflow_sdk，free5 将不可用。如需使用，请安装: pip install iflow-sdk")
 
 app = Flask(__name__)
 
 # 配置 requests 会话，使用连接池和重试策略
 session = requests.Session()
 
-# 全局变量
+# 配置重试策略
+retry_strategy = Retry(
+    total=0,  # 由我们的 execute_with_retry 函数处理重试
+    backoff_factor=1,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["POST", "GET"]
+)
+
+adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=10, pool_maxsize=10)
+session.mount("http://", adapter)
+session.mount("https://", adapter)
+
+# 全局变量用于重启控制
 RESTART_FLAG = False
-WATCHED_FILES = {'.env', 'multi_free_api_proxy_v3.py'}
+WATCHED_FILES = {'.env', 'local_api_proxy.py'}
 DEBUG_MODE = False
 CACHE_DIR = None
 HTTP_PROXY = None
 
 # 并发控制相关
-MAX_CONCURRENT_REQUESTS = 5
+MAX_CONCURRENT_REQUESTS = 5  # 默认最大并发数
 ACTIVE_REQUESTS = 0
 REQUEST_QUEUE = deque()
 QUEUE_LOCK = threading.Lock()
 ACTIVE_LOCK = threading.Lock()
 
-# Free API相关
-FREE_APIS = {}
-AVAILABLE_APIS = deque()
-API_LOCK = threading.Lock()
-MAX_CONSECUTIVE_FAILURES = 3  # 连续失败次数阈值，超过此值标记API无效
-
-# 调用历史记录
+# 调用历史记录（用于重试决策）
 CALL_HISTORY = deque(maxlen=10)
 HISTORY_LOCK = threading.Lock()
 
-# 错误类型
 ERROR_TYPES = {
     "NONE": "none",
     "TIMEOUT": "timeout",
@@ -97,52 +87,70 @@ def check_debug_mode():
     """检查是否启用调试模式"""
     return Path('DEBUG_MODE.txt').exists()
 
-def save_message_cache(message_type, message_id, data, api_name=None):
+def save_message_cache(message_type, message_id, data):
     """保存消息到缓存目录"""
     if not DEBUG_MODE or not CACHE_DIR:
         return
-
+    
     try:
+        # 创建缓存目录
         cache_path = Path(CACHE_DIR)
         cache_path.mkdir(parents=True, exist_ok=True)
-
+        
+        # 生成文件名: 时间戳_收发标志_消息id.json
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
         filename = f"{timestamp}_{message_type}_{message_id}.json"
         filepath = cache_path / filename
-
-        cache_data = {
-            'timestamp': datetime.now().isoformat(),
-            'type': message_type,
-            'message_id': message_id,
-            'data': data
-        }
-
-        # 如果提供了 api_name，添加到缓存数据中
-        if api_name:
-            cache_data['api_name'] = api_name
-
+        
+        # 保存消息
         with open(filepath, 'w', encoding='utf-8') as f:
-            json.dump(cache_data, f, indent=2, ensure_ascii=False)
-
-        api_info = f" [{api_name}]" if api_name else ""
-        print(f"[缓存] 已保存 {message_type}{api_info} 消息: {filename}")
+            json.dump({
+                'timestamp': datetime.now().isoformat(),
+                'type': message_type,
+                'message_id': message_id,
+                'data': data
+            }, f, indent=2, ensure_ascii=False)
+        
+        print(f"[缓存] 已保存 {message_type} 消息: {filename}")
+        
+        # 更新每日调用计数
+        if message_type == "RESPONSE":
+            update_daily_counter("success")
+        elif message_type == "ERROR":
+            error_data = data.get('error', {}) if isinstance(data, dict) else {}
+            error_msg = str(error_data.get('message', '')).lower()
+            if 'timeout' in error_msg or '超时' in error_msg:
+                update_daily_counter("timeout")
+            else:
+                update_daily_counter("failed")
     except Exception as e:
         print(f"[缓存错误] 保存消息失败: {e}")
 
 def update_daily_counter(counter_type="total"):
-    """更新每日调用计数"""
+    """更新每日调用计数
+    
+    Args:
+        counter_type: 计数器类型，可选值:
+            - "total": 总调用次数
+            - "success": 成功次数
+            - "failed": 失败次数
+            - "timeout": 超时次数
+            - "retry": 重试次数
+    """
     if not DEBUG_MODE or not CACHE_DIR:
         return
-
+    
     valid_types = ["total", "success", "failed", "timeout", "retry"]
     if counter_type not in valid_types:
+        print(f"[计数错误] 无效的计数器类型: {counter_type}")
         return
-
+    
     try:
         cache_path = Path(CACHE_DIR)
         today = datetime.now().strftime("%Y%m%d")
         counter_file = cache_path / f"CALLS_{today}.json"
-
+        
+        # 读取当前计数
         if counter_file.exists():
             with open(counter_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
@@ -155,12 +163,15 @@ def update_daily_counter(counter_type="total"):
                 'timeout': 0,
                 'retry': 0
             }
-
+        
+        # 增加计数
         data[counter_type] = data.get(counter_type, 0) + 1
-
+        
+        # 同时增加总调用次数（成功/失败/超时时增加，重试不增加总调用）
         if counter_type in ["success", "failed", "timeout"]:
             data['total'] = data.get('total', 0) + 1
-
+        
+        # 写入更新后的计数
         with open(counter_file, 'w', encoding='utf-8') as f:
             json.dump({
                 'date': today,
@@ -171,7 +182,8 @@ def update_daily_counter(counter_type="total"):
                 'retry': data.get('retry', 0),
                 'last_updated': datetime.now().isoformat()
             }, f, indent=2, ensure_ascii=False)
-
+        
+        # 打印日志
         type_names = {"total": "总调用", "success": "成功", "failed": "失败", "timeout": "超时", "retry": "重试"}
         print(f"[计数] {type_names[counter_type]} +1 (总计: 总={data['total']} 成功={data['success']} 失败={data['failed']} 超时={data['timeout']} 重试={data['retry']})")
     except Exception as e:
@@ -188,7 +200,7 @@ def ensure_cache_dir():
     """确保缓存目录存在"""
     if not CACHE_DIR:
         return
-
+    
     try:
         cache_path = Path(CACHE_DIR)
         cache_path.mkdir(parents=True, exist_ok=True)
@@ -198,37 +210,42 @@ def ensure_cache_dir():
 
 def reload_env():
     """重新加载环境变量"""
-    global DEBUG_MODE, CACHE_DIR, HTTP_PROXY, MAX_CONCURRENT_REQUESTS
-
+    global API_KEY, DEBUG_MODE, CACHE_DIR, HTTP_PROXY, MAX_CONCURRENT_REQUESTS
+    # 清除旧的环境变量
+    if 'OPENROUTER_API_KEY' in os.environ:
+        del os.environ['OPENROUTER_API_KEY']
     if 'CACHE_DIR' in os.environ:
         del os.environ['CACHE_DIR']
     if 'HTTP_PROXY' in os.environ:
         del os.environ['HTTP_PROXY']
     if 'MAX_CONCURRENT_REQUESTS' in os.environ:
         del os.environ['MAX_CONCURRENT_REQUESTS']
-
+    
     load_env()
-
+    API_KEY = os.getenv("OPENROUTER_API_KEY")
+    if not API_KEY:
+        raise ValueError("OPENROUTER_API_KEY not found in .env file")
+    
+    # 更新调试模式和缓存目录
     DEBUG_MODE = check_debug_mode()
     CACHE_DIR = os.getenv("CACHE_DIR")
     HTTP_PROXY = os.getenv("HTTP_PROXY")
     MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
-
+    
     if DEBUG_MODE:
         print("[调试] 调试模式已启用")
         if CACHE_DIR:
             ensure_cache_dir()
         else:
             print("[调试] 未配置缓存目录，消息不会被保存")
-
+    
     if HTTP_PROXY:
         print(f"[代理] HTTP 代理已配置: {HTTP_PROXY}")
-
+    
     print(f"[配置] 最大并发数: {MAX_CONCURRENT_REQUESTS}")
     print("[重载] 环境变量已重新加载")
 
 def load_env():
-    """加载环境变量"""
     env_file = ".env"
     if os.path.exists(env_file):
         with open(env_file, "r", encoding="utf-8") as f:
@@ -238,514 +255,28 @@ def load_env():
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
 
-# 加载环境变量
 load_env()
 
-# 从环境变量加载Free API配置
-FREE1_API_KEY = os.getenv("FREE1_API_KEY")
-FREE2_API_KEY = os.getenv("FREE2_API_KEY")
-FREE3_API_KEY = os.getenv("FREE3_API_KEY")
-FREE4_API_KEY = os.getenv("FREE4_API_KEY")
-FREE5_API_KEY = os.getenv("FREE5_API_KEY")
-FREE6_API_KEY = os.getenv("FREE6_API_KEY")
-
-DEBUG_MODE = check_debug_mode()
-CACHE_DIR = os.getenv("CACHE_DIR")
+API_KEY = os.getenv("OPENROUTER_API_KEY")
+TEST_MODE = os.getenv("TEST_MODE", "false").lower() == "true"
 HTTP_PROXY = os.getenv("HTTP_PROXY")
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
 
-def test_api_startup(api_name):
-    """启动时测试API是否可用"""
-    global FREE_APIS, HTTP_PROXY
+if not API_KEY and not TEST_MODE:
+    raise ValueError("OPENROUTER_API_KEY not found in .env file and TEST_MODE is not enabled")
 
-    if api_name not in FREE_APIS:
-        return False
+# 初始化调试模式和缓存目录
+DEBUG_MODE = check_debug_mode()
+CACHE_DIR = os.getenv("CACHE_DIR")
 
-    api_config = FREE_APIS[api_name]
-    api_key = api_config["api_key"]
-    base_url = api_config["base_url"]
-    model = api_config.get("model", "gpt-3.5-turbo")
-    use_proxy = api_config.get("use_proxy", False)
-    use_sdk = api_config.get("use_sdk", False)
-
-    print(f"[启动测试] 测试 {api_name} (模型: {model}, 代理: {use_proxy}, SDK: {use_sdk})...")
-
-    # 如果使用 iflow SDK
-    if use_sdk:
-        if not IFLOW_SDK_AVAILABLE:
-            print(f"[启动测试] {api_name} 不可用: iflow SDK 未安装")
-            api_config["available"] = False
-            api_config["last_test_result"] = "error: iflow SDK 未安装"
-            api_config["failure_count"] += 1
-            return False
-
-        try:
-            # 使用 iflow_sdk 测试
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            try:
-                response_text = loop.run_until_complete(iflow_query("Hello"))
-            finally:
-                loop.close()
-
-            api_config["last_test_time"] = datetime.now().isoformat()
-            api_config["available"] = True
-            api_config["last_test_result"] = "success"
-            api_config["success_count"] += 1
-            print(f"[启动测试] {api_name} 可用")
-            return True
-        except Exception as e:
-            api_config["available"] = False
-            api_config["last_test_time"] = datetime.now().isoformat()
-            api_config["last_test_result"] = f"error: {str(e)}"
-            api_config["failure_count"] += 1
-            print(f"[启动测试] {api_name} 测试失败: {e}")
-            return False
-
-    # 使用 HTTP API
-    try:
-        url = f"{base_url}/v1/chat/completions"
-        headers = {
-            'Authorization': f'Bearer {api_key}',
-            'Content-Type': 'application/json'
-        }
-
-        # 配置代理
-        proxies = None
-        if use_proxy and HTTP_PROXY:
-            proxies = {
-                "http": HTTP_PROXY,
-                "https": HTTP_PROXY
-            }
-
-        payload = {
-            "model": model,
-            "messages": [
-                {"role": "user", "content": "Hello"}
-            ],
-            "max_tokens": 10
-        }
-
-        response = requests.post(url, headers=headers, json=payload, proxies=proxies, timeout=30)
-
-        api_config["last_test_time"] = datetime.now().isoformat()
-
-        if response.status_code == 200:
-            api_config["available"] = True
-            api_config["last_test_result"] = "success"
-            api_config["success_count"] += 1
-            print(f"[启动测试] {api_name} 可用")
-            return True
-        else:
-            api_config["available"] = False
-            api_config["last_test_result"] = f"failed: {response.status_code}"
-            api_config["failure_count"] += 1
-            print(f"[启动测试] {api_name} 不可用: {response.status_code}")
-            return False
-    except Exception as e:
-        api_config["available"] = False
-        api_config["last_test_time"] = datetime.now().isoformat()
-        api_config["last_test_result"] = f"error: {str(e)}"
-        api_config["failure_count"] += 1
-        print(f"[启动测试] {api_name} 测试失败: {e}")
-        return False
-
-def load_api_configs():
-    """从free_api_test目录自动加载API配置"""
-    global FREE_APIS, FREE1_API_KEY, FREE5_API_KEY
-
-    # 扫描free_api_test目录（使用绝对路径）
-    script_dir = Path(__file__).parent
-    free_api_dir = script_dir.parent / "free_api_test"
-
-    print(f"[调试] 脚本目录: {script_dir}")
-    print(f"[调试] API目录: {free_api_dir}")
-    print(f"[调试] API目录存在: {free_api_dir.exists()}")
-
-    if not free_api_dir.exists():
-        print(f"[警告] 未找到 free_api_test 目录: {free_api_dir}")
-        return
-
-    # 初始化API配置字典
-    FREE_APIS = {}
-
-    # 扫描所有free*子目录
-    api_dirs = list(free_api_dir.glob("free*"))
-    print(f"[调试] 找到 {len(api_dirs)} 个 API 目录: {[d.name for d in api_dirs]}")
-
-    for api_dir in sorted(api_dirs):
-        api_name = api_dir.name
-        config_file = api_dir / "config.py"
-
-        # 跳过没有config.py的目录
-        if not config_file.exists():
-            print(f"[跳过] {api_name}: 未找到 config.py")
-            continue
-
-        print(f"[调试] 正在加载 {api_name} 的配置...")
-
-        # 动态导入配置模块
-        try:
-            spec = importlib.util.spec_from_file_location(
-                f"config_{api_name}",
-                str(config_file)
-            )
-            config_module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(config_module)
-
-            # 提取配置信息
-            api_key = getattr(config_module, "API_KEY", None)
-            base_url = getattr(config_module, "BASE_URL", None)
-            model_name = getattr(config_module, "MODEL_NAME", None)
-            use_proxy = getattr(config_module, "USE_PROXY", False)
-            use_sdk = getattr(config_module, "USE_SDK", False)
-            response_format = getattr(config_module, "RESPONSE_FORMAT", {
-                "content_fields": ["content"],
-                "merge_fields": False,
-                "use_reasoning_as_fallback": False
-            })
-
-            print(f"[调试] {api_name} 配置: API_KEY={api_key[:10] if api_key else None}..., BASE_URL={base_url}, MODEL={model_name}")
-
-            # 验证必要配置
-            if not base_url or not model_name:
-                print(f"[跳过] {api_name}: 配置不完整 (缺少 base_url 或 model_name)")
-                continue
-
-            # API_KEY 可以为空，但在实际调用时会失败
-            if not api_key:
-                print(f"[警告] {api_name}: API_KEY 未设置")
-
-            # 特殊处理free1和free5
-            if api_name == "free1":
-                use_proxy = True  # free1强制使用代理
-            elif api_name == "free5":
-                use_sdk = True  # free5强制使用SDK
-
-            # 构建API配置
-            FREE_APIS[api_name] = {
-                "name": api_name,
-                "api_key": api_key,
-                "base_url": base_url,
-                "model": model_name,
-                "use_proxy": use_proxy,
-                "response_format": response_format,
-                "available": False,
-                "last_test_time": None,
-                "last_test_result": None,
-                "success_count": 0,
-                "failure_count": 0,
-                "consecutive_failures": 0
-            }
-
-            # 添加SDK标记
-            if use_sdk:
-                FREE_APIS[api_name]["use_sdk"] = True
-
-            print(f"[加载] {api_name}: {model_name} @ {base_url}")
-            print(f"[调试] {api_name} 已添加到 FREE_APIS, 当前总数: {len(FREE_APIS)}")
-
-        except Exception as e:
-            print(f"[错误] 加载 {api_name} 配置失败: {e}")
-            continue
-
-    print(f"[配置] 已加载 {len(FREE_APIS)} 个API配置")
-    for api_name, api_config in FREE_APIS.items():
-        proxy_info = "代理" if api_config.get('use_proxy') else "直连"
-        sdk_info = "SDK" if api_config.get('use_sdk') else "HTTP"
-        print(f"[配置] {api_name}: {sdk_info}/{proxy_info}, MODEL={api_config['model']}")
-
-def test_all_apis_startup():
-    """启动时测试所有API"""
-    global FREE_APIS, AVAILABLE_APIS
-
-    print("\n[启动测试] 开始测试所有API...")
-
-    with API_LOCK:
-        AVAILABLE_APIS.clear()
-
-        for api_name in FREE_APIS:
-            if FREE_APIS[api_name]["api_key"]:  # 只测试配置了API Key的
-                if test_api_startup(api_name):
-                    AVAILABLE_APIS.append(api_name)
-
-        print(f"[启动测试] 测试完成，可用API: {len(AVAILABLE_APIS)}/{len(FREE_APIS)}")
-        if AVAILABLE_APIS:
-            print(f"[启动测试] 可用API列表: {list(AVAILABLE_APIS)}")
-
-def get_next_available_api():
-    """获取下一个可用的API"""
-    global AVAILABLE_APIS
-
-    with API_LOCK:
-        if not AVAILABLE_APIS:
-            return None
-
-        # 获取队列中的第一个API
-        api_name = AVAILABLE_APIS[0]
-
-        # 将其移到队列末尾，实现轮换
-        AVAILABLE_APIS.rotate(-1)
-
-        return api_name
-
-def mark_api_failure(api_name):
-    """标记API失败，连续失败超过阈值则从可用列表移除"""
-    global FREE_APIS, AVAILABLE_APIS, MAX_CONSECUTIVE_FAILURES
-    
-    if api_name not in FREE_APIS:
-        return
-    
-    api_config = FREE_APIS[api_name]
-    api_config["consecutive_failures"] = api_config.get("consecutive_failures", 0) + 1
-    api_config["failure_count"] += 1
-    
-    consecutive = api_config["consecutive_failures"]
-    print(f"[API状态] {api_name} 连续失败次数: {consecutive}/{MAX_CONSECUTIVE_FAILURES}")
-    
-    if consecutive >= MAX_CONSECUTIVE_FAILURES:
-        with API_LOCK:
-            if api_name in AVAILABLE_APIS:
-                AVAILABLE_APIS.remove(api_name)
-                api_config["available"] = False
-                api_config["last_test_result"] = f"marked invalid after {consecutive} consecutive failures"
-                print(f"[API状态] {api_name} 已标记为无效（连续失败{consecutive}次）")
-                print(f"[API状态] 剩余可用API: {list(AVAILABLE_APIS)}")
-
-def mark_api_success(api_name):
-    """标记API成功，重置连续失败计数"""
-    global FREE_APIS
-    
-    if api_name not in FREE_APIS:
-        return
-    
-    api_config = FREE_APIS[api_name]
-    api_config["consecutive_failures"] = 0
-    api_config["success_count"] += 1
-    
-    # 如果API不在可用列表中，重新添加
-    with API_LOCK:
-        if api_name not in AVAILABLE_APIS and api_config.get("api_key"):
-            AVAILABLE_APIS.append(api_name)
-            api_config["available"] = True
-            print(f"[API状态] {api_name} 已恢复并重新加入可用列表")
-
-def execute_with_free_api(data, message_id):
-    """使用Free API执行请求"""
-    global FREE_APIS, HTTP_PROXY
-
-    retry_count = 0
-    last_error = None
-    used_api_name = None  # 记录最终使用的API名称
-
-    max_retries = 3
-    timeout_base = 45
-    timeout_retry = 60
-
-    for attempt in range(max_retries):
-        api_name = get_next_available_api()
-
-        if not api_name:
-            raise Exception("没有可用的Free API")
-
-        api_config = FREE_APIS[api_name]
-        api_key = api_config["api_key"]
-        base_url = api_config["base_url"]
-        model = api_config.get("model", "gpt-3.5-turbo")
-        use_proxy = api_config.get("use_proxy", False)
-        use_sdk = api_config.get("use_sdk", False)
-
-        # 如果使用 iflow SDK
-        if use_sdk:
-            if not IFLOW_SDK_AVAILABLE:
-                raise Exception("iflow SDK 未安装，无法使用 free5")
-
-            try:
-                # 从请求中提取消息
-                messages = data.get("messages", [])
-                if not messages:
-                    raise ValueError("No messages provided")
-
-                # 获取最后一条用户消息
-                user_message = None
-                for msg in reversed(messages):
-                    if msg.get("role") == "user":
-                        user_message = msg.get("content", "")
-                        break
-
-                if not user_message:
-                    raise ValueError("No user message found")
-
-                # 使用 iflow_sdk 查询
-                print(f"[请求] 发送到 {api_name} (模型: {model})")
-
-                # 创建事件循环执行异步查询
-                loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(loop)
-                try:
-                    response_text = loop.run_until_complete(iflow_query(user_message))
-                finally:
-                    loop.close()
-
-                # 构建 OpenAI 兼容格式的响应
-                result = {
-                    "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
-                    "created": int(time.time()),
-                    "model": model,
-                    "choices": [{
-                        "index": 0,
-                        "message": {
-                            "role": "assistant",
-                            "content": response_text
-                        },
-                        "finish_reason": "stop"
-                    }],
-                    "usage": {
-                        "prompt_tokens": len(user_message),
-                        "completion_tokens": len(response_text),
-                        "total_tokens": len(user_message) + len(response_text)
-                    }
-                }
-
-                print(f"[请求] 成功")
-
-                # 标记成功，重置连续失败计数
-                mark_api_success(api_name)
-                used_api_name = api_name
-
-                return result, retry_count, used_api_name
-
-            except Exception as e:
-                last_error = e
-                error_msg = f"[请求] 失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-                print(error_msg)
-
-                # 标记失败
-                mark_api_failure(api_name)
-
-                if attempt < max_retries - 1:
-                    retry_count += 1
-                    update_daily_counter("retry")
-                    wait_time = 2 ** attempt
-                    print(f"[重试] {wait_time}秒后重试...")
-                    time.sleep(wait_time)
-                    continue
-
-                raise last_error
-
-        # 使用 HTTP API
-        try:
-            url = f"{base_url}/v1/chat/completions"
-            headers = {
-                'Authorization': f'Bearer {api_key}',
-                'Content-Type': 'application/json'
-            }
-
-            # 配置代理
-            proxies = None
-            if use_proxy and HTTP_PROXY:
-                proxies = {
-                    "http": HTTP_PROXY,
-                    "https": HTTP_PROXY
-                }
-
-            current_timeout = timeout_retry if attempt > 0 else timeout_base
-            attempt_str = f"(尝试 {attempt + 1}/{max_retries})" if attempt > 0 else ""
-            print(f"[请求] 发送到 {api_name} (模型: {model}, 代理: {use_proxy}) {attempt_str} [超时: {current_timeout}s]")
-
-            request_data = {
-                "model": model,
-                "messages": data.get("messages", []),
-                "temperature": data.get("temperature", 0.7),
-                "max_tokens": data.get("max_tokens", 2000),
-                "top_p": data.get("top_p", 1),
-            }
-
-            response = session.post(
-                url,
-                json=request_data,
-                headers=headers,
-                proxies=proxies,
-                timeout=current_timeout
-            )
-            response.raise_for_status()
-
-            result = response.json()
-            print(f"[请求] 成功 {attempt_str}")
-
-            # 标记成功，重置连续失败计数
-            mark_api_success(api_name)
-            used_api_name = api_name
-
-            return result, retry_count, used_api_name
-
-        except requests.exceptions.Timeout as e:
-            last_error = e
-            error_msg = f"[请求] 超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-            print(error_msg)
-            update_daily_counter("timeout")
-
-            # 标记失败
-            mark_api_failure(api_name)
-
-            if attempt < max_retries - 1:
-                retry_count += 1
-                update_daily_counter("retry")
-                wait_time = 2 ** attempt
-                print(f"[重试] 超时错误，{wait_time}秒后重试...")
-                time.sleep(wait_time)
-                continue
-
-        except requests.exceptions.ConnectionError as e:
-            last_error = e
-            error_msg = f"[请求] 连接错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-            print(error_msg)
-
-            # 标记失败
-            mark_api_failure(api_name)
-
-            if attempt < max_retries - 1:
-                retry_count += 1
-                update_daily_counter("retry")
-                wait_time = 2 ** attempt
-                print(f"[重试] 连接错误，{wait_time}秒后重试...")
-                time.sleep(wait_time)
-                continue
-
-        except requests.exceptions.HTTPError as e:
-            last_error = e
-            status_code = e.response.status_code if hasattr(e, 'response') else 'unknown'
-            error_msg = f"[请求] HTTP错误 {status_code} (尝试 {attempt + 1}/{max_retries}): {str(e)}"
-            print(error_msg)
-
-            # 标记失败
-            mark_api_failure(api_name)
-
-            if 500 <= status_code < 600 and attempt < max_retries - 1:
-                retry_count += 1
-                update_daily_counter("retry")
-                wait_time = 2 ** attempt
-                print(f"[重试] 服务器错误，{wait_time}秒后重试...")
-                time.sleep(wait_time)
-                continue
-            else:
-                break
-
-        except Exception as e:
-            last_error = e
-            print(f"[请求] 失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-
-            # 标记失败
-            mark_api_failure(api_name)
-            break
-
-    raise last_error
+OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 @app.route('/v1/chat/completions', methods=['POST'])
 def chat_completions():
     """兼容 OpenAI API 格式的聊天完成端点"""
-    global RESTART_FLAG, DEBUG_MODE, CACHE_DIR, HTTP_PROXY, ACTIVE_REQUESTS, MAX_CONCURRENT_REQUESTS
-
+    global RESTART_FLAG, API_KEY, DEBUG_MODE, CACHE_DIR, HTTP_PROXY, ACTIVE_REQUESTS, MAX_CONCURRENT_REQUESTS
+    
+    # 检查是否需要重启
     if RESTART_FLAG:
         print("\n[重启] 检测到配置变化，重新加载...")
         try:
@@ -755,20 +286,23 @@ def chat_completions():
         except Exception as e:
             print(f"[错误] 重新加载失败: {e}")
             return jsonify({"error": f"Configuration reload failed: {str(e)}"}), 500
-
+    
+    # 检查调试模式
     DEBUG_MODE = check_debug_mode()
     CACHE_DIR = os.getenv("CACHE_DIR")
     HTTP_PROXY = os.getenv("HTTP_PROXY")
-
-    max_wait_time = 120
+    
+    # 检查并发限制（带超时）
+    max_wait_time = 120  # 最多等待120秒
     wait_start = time.time()
-
+    
     while True:
         with ACTIVE_LOCK:
             if ACTIVE_REQUESTS < MAX_CONCURRENT_REQUESTS:
                 ACTIVE_REQUESTS += 1
                 break
-
+        
+        # 检查是否超时
         elapsed = time.time() - wait_start
         if elapsed > max_wait_time:
             print(f"[并发] 等待超时 (已等待 {elapsed:.1f}s)")
@@ -781,170 +315,113 @@ def chat_completions():
                 "details": f"Current: {ACTIVE_REQUESTS}/{MAX_CONCURRENT_REQUESTS}",
                 "error_type": ERROR_TYPES["CONCURRENT_LIMIT"]
             }), 503
-
+        
+        # 每5秒打印一次等待状态
         if int(elapsed) % 5 == 0:
             print(f"[并发] 等待中... (已等待 {elapsed:.1f}s, 当前: {ACTIVE_REQUESTS}/{MAX_CONCURRENT_REQUESTS})")
-
-        time.sleep(0.5)
-
+        
+        time.sleep(0.5)  # 减少轮询间隔，更快响应
+    
     try:
         data = request.json
         message_id = str(uuid.uuid4())[:8]
-
+        
+        # 保存请求消息
         if DEBUG_MODE:
             save_message_cache("REQUEST", message_id, data)
-
-        result, retry_count, used_api_name = execute_with_free_api(data, message_id)
-
+        
+        # 执行请求（带重试机制）
+        result, retry_count = execute_with_retry(data, message_id)
+        
+        # 转换为 OpenAI 兼容格式
         response_data = {
             "id": result.get("id", ""),
             "object": "chat.completion",
             "created": result.get("created", 0),
-            "model": result.get("model", "gpt-3.5-turbo"),
+            "model": result.get("model", "openrouter/free"),
             "choices": result.get("choices", []),
             "usage": result.get("usage", {}),
         }
-
+        
+        # 如果 content 为空但有 reasoning,则将 reasoning 复制到 content
         for choice in response_data.get("choices", []):
             message = choice.get("message", {})
-
-            # 根据 API 的 response_format 配置提取内容
-            api_config = FREE_APIS.get(used_api_name, {})
-            response_format = api_config.get("response_format", {
-                "content_fields": ["content"],
-                "merge_fields": False,
-                "use_reasoning_as_fallback": False
-            })
-
-            content_fields = response_format.get("content_fields", ["content"])
-            merge_fields = response_format.get("merge_fields", False)
-            use_reasoning_as_fallback = response_format.get("use_reasoning_as_fallback", False)
-
-            # 提取内容
-            extracted_content = None
-
-            if merge_fields:
-                # 合并多个字段的内容
-                contents = []
-                for field in content_fields:
-                    if message.get(field):
-                        contents.append(message[field])
-                if contents:
-                    separator = response_format.get("field_separator", "\n\n---\n\n")
-                    extracted_content = separator.join(contents)
-            else:
-                # 按优先级提取第一个非空字段
-                for field in content_fields:
-                    if message.get(field):
-                        extracted_content = message[field]
-                        print(f"[处理] {used_api_name}: 使用 {field} 字段")
-                        break
-
-                # 如果所有字段都为空，且配置了 use_reasoning_as_fallback，尝试使用 reasoning_content
-                if not extracted_content and use_reasoning_as_fallback and message.get("reasoning_content"):
-                    extracted_content = message["reasoning_content"]
-                    print(f"[处理] {used_api_name}: 所有字段为空，使用 reasoning_content 作为后备")
-
-            # 如果提取到了内容，更新 message
-            if extracted_content:
-                message["content"] = extracted_content
-
+            if not message.get("content") and message.get("reasoning"):
+                message["content"] = message["reasoning"]
+        
+        # 记录调用历史
         with HISTORY_LOCK:
             CALL_HISTORY.append({"success": True, "timestamp": datetime.now()})
-
-        # 更新成功计数
-        update_daily_counter("success")
-
+        
+        # 保存响应消息
         if DEBUG_MODE:
             response_data["_retry_count"] = retry_count
-            response_data["_api_name"] = used_api_name
-            save_message_cache("RESPONSE", message_id, response_data, used_api_name)
-
+            save_message_cache("RESPONSE", message_id, response_data)
+        
         return jsonify(response_data)
-
+    
     except requests.exceptions.RequestException as e:
         error_str = str(e).lower()
         error_type = ERROR_TYPES["API_ERROR"]
-
+        
         if "timeout" in error_str or "timed out" in error_str:
             error_type = ERROR_TYPES["TIMEOUT"]
-            update_daily_counter("timeout")
         elif "connection" in error_str or "refused" in error_str:
             error_type = ERROR_TYPES["UPSTREAM_UNREACHABLE"]
         elif "proxy" in error_str:
             error_type = ERROR_TYPES["PROXY_ERROR"]
-        else:
-            error_type = ERROR_TYPES["API_ERROR"]
-
-        # 更新失败计数
-        update_daily_counter("failed")
-
+        
         with LAST_ERROR_LOCK:
             LAST_ERROR["type"] = error_type
             LAST_ERROR["message"] = str(e)
             LAST_ERROR["timestamp"] = datetime.now().isoformat()
-
+        
         error_response = {
-            "error": f"Free API error: {str(e)}",
+            "error": f"OpenRouter API error: {str(e)}",
             "error_type": error_type
         }
-
+        
+        # 记录调用历史
         with HISTORY_LOCK:
             CALL_HISTORY.append({"success": False, "timestamp": datetime.now(), "error_type": error_type})
-
+        
         if DEBUG_MODE:
-            error_response["_api_name"] = getattr(locals(), 'used_api_name', 'unknown')
-            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response, error_response.get("_api_name"))
+            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response)
         return jsonify(error_response), 502
     except Exception as e:
         with LAST_ERROR_LOCK:
             LAST_ERROR["type"] = ERROR_TYPES["UNKNOWN"]
             LAST_ERROR["message"] = str(e)
             LAST_ERROR["timestamp"] = datetime.now().isoformat()
-
+        
         error_response = {"error": str(e), "error_type": ERROR_TYPES["UNKNOWN"]}
-
+        
+        # 记录调用历史
         with HISTORY_LOCK:
             CALL_HISTORY.append({"success": False, "timestamp": datetime.now(), "error_type": ERROR_TYPES["UNKNOWN"]})
-
-        # 更新失败计数
-        update_daily_counter("failed")
-
+        
         if DEBUG_MODE:
-            error_response["_api_name"] = getattr(locals(), 'used_api_name', 'unknown')
-            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response, error_response.get("_api_name"))
+            save_message_cache("ERROR", str(uuid.uuid4())[:8], error_response)
         return jsonify(error_response), 400
     finally:
+        # 释放并发槽位
         with ACTIVE_LOCK:
             ACTIVE_REQUESTS -= 1
         print(f"[并发] 请求完成 (当前: {ACTIVE_REQUESTS}/{MAX_CONCURRENT_REQUESTS})")
 
 @app.route('/v1/models', methods=['GET'])
 def list_models():
-    """列出所有API支持的模型"""
-    global FREE_APIS
-
-    models = []
-
-    for api_name, api_config in FREE_APIS.items():
-        model = api_config.get("model", "gpt-3.5-turbo")
-        models.append({
-            "id": model,
-            "object": "model",
-            "owned_by": api_name,
-            "permission": []
-        })
-
-    unique_models = []
-    seen = set()
-    for model in models:
-        if model["id"] not in seen:
-            seen.add(model["id"])
-            unique_models.append(model)
-
+    """列出可用模型"""
     return jsonify({
         "object": "list",
-        "data": unique_models
+        "data": [
+            {
+                "id": "openrouter/free",
+                "object": "model",
+                "owned_by": "openrouter",
+                "permission": []
+            }
+        ]
     })
 
 @app.route('/health', methods=['GET'])
@@ -955,36 +432,264 @@ def health():
 @app.route('/health/upstream', methods=['GET'])
 def health_upstream():
     """检查上游 API 连接状态"""
-    with API_LOCK:
-        available_count = len(AVAILABLE_APIS)
-        total_count = len(FREE_APIS)
-        api_list = list(AVAILABLE_APIS) if AVAILABLE_APIS else []
+    if TEST_MODE:
+        return jsonify({
+            "status": "ok",
+            "mode": "test",
+            "upstream": "simulated"
+        })
+    
+    try:
+        headers = {
+            "Authorization": f"Bearer {API_KEY}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "http://localhost:5000",
+            "X-Title": "LocalAPIProxy",
+        }
+        
+        proxies = None
+        if HTTP_PROXY:
+            proxies = {
+                "http": HTTP_PROXY,
+                "https": HTTP_PROXY
+            }
+        
+        # 发送一个最小的测试请求
+        test_payload = {
+            "model": "openrouter/free",
+            "messages": [{"role": "user", "content": "ping"}],
+            "max_tokens": 10,
+        }
+        
+        start_time = time.time()
+        response = session.post(
+            OPENROUTER_API_URL,
+            json=test_payload,
+            headers=headers,
+            proxies=proxies,
+            timeout=10
+        )
+        elapsed = time.time() - start_time
+        
+        if response.status_code == 200:
+            return jsonify({
+                "status": "ok",
+                "upstream": "reachable",
+                "response_time_ms": int(elapsed * 1000)
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "upstream": "error",
+                "http_status": response.status_code,
+                "response_time_ms": int(elapsed * 1000)
+            }), 502
+    
+    except requests.exceptions.Timeout:
+        return jsonify({
+            "status": "error",
+            "upstream": "timeout",
+            "message": "Upstream API timeout"
+        }), 504
+    except requests.exceptions.ConnectionError:
+        return jsonify({
+            "status": "error",
+            "upstream": "unreachable",
+            "message": "Cannot connect to upstream API"
+        }), 503
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "upstream": "error",
+            "message": str(e)
+        }), 500
 
-    return jsonify({
-        "status": "ok",
-        "upstream": "free-apis",
-        "available_apis": available_count,
-        "total_apis": total_count,
-        "api_list": api_list
-    })
+def should_retry():
+    """判断是否应该重试
+    条件：
+    1. 今天前3次调用中有失败
+    2. 最近3次调用中有成功
+    """
+    with HISTORY_LOCK:
+        if len(CALL_HISTORY) == 0:
+            return False
+        
+        today = datetime.now().date()
+        today_calls = [call for call in CALL_HISTORY if call["timestamp"].date() == today]
+        
+        # 条件1：今天前3次调用中有失败
+        if len(today_calls) < 3:
+            has_failure_today = any(not call["success"] for call in today_calls)
+            if has_failure_today:
+                return True
+        
+        # 条件2：最近3次调用中有成功
+        has_recent_success = any(call["success"] for call in CALL_HISTORY)
+        if has_recent_success:
+            return True
+        
+        return False
+
+def execute_with_retry(data, message_id):
+    """执行请求，如果失败则重试一次
+    返回: (result, retry_count)
+    """
+    global API_KEY, HTTP_PROXY, TEST_MODE
+    
+    retry_count = 0
+    last_error = None
+    
+    # 重试配置
+    max_retries = 3  # 增加重试次数
+    timeout_base = 45  # 基础超时时间（秒）
+    timeout_retry = 60  # 重试时的超时时间（秒）
+    
+    for attempt in range(max_retries):
+        try:
+            # 构建 OpenRouter 请求
+            openrouter_payload = {
+                "model": "openrouter/free",
+                "messages": data.get("messages", []),
+                "temperature": data.get("temperature", 0.7),
+                "max_tokens": data.get("max_tokens", 2000),
+                "top_p": data.get("top_p", 1),
+            }
+            
+            # 测试模式或转发到 OpenRouter
+            if TEST_MODE:
+                # 返回模拟响应
+                result = {
+                    "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",
+                    "created": int(time.time()),
+                    "model": "openrouter/free",
+                    "choices": [{
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": "这是一个测试模式的响应。您已成功启动API代理服务！"
+                        },
+                        "finish_reason": "stop"
+                    }],
+                    "usage": {
+                        "prompt_tokens": 10,
+                        "completion_tokens": 15,
+                        "total_tokens": 25
+                    }
+                }
+                print("[测试模式] 返回模拟响应")
+                return result, retry_count
+            else:
+                # 转发到 OpenRouter
+                headers = {
+                    "Authorization": f"Bearer {API_KEY}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "http://localhost:5000",
+                    "X-Title": "LocalAPIProxy",
+                }
+                
+                # 配置代理
+                proxies = None
+                if HTTP_PROXY:
+                    proxies = {
+                        "http": HTTP_PROXY,
+                        "https": HTTP_PROXY
+                    }
+                    if attempt == 0:
+                        print(f"[代理] 使用代理服务器: {HTTP_PROXY}")
+                
+                # 根据重试次数调整超时时间
+                current_timeout = timeout_retry if attempt > 0 else timeout_base
+                attempt_str = f"(尝试 {attempt + 1}/{max_retries})" if attempt > 0 else ""
+                print(f"[请求] 发送到 OpenRouter {attempt_str} [超时: {current_timeout}s]")
+                
+                response = session.post(
+                    OPENROUTER_API_URL, 
+                    json=openrouter_payload, 
+                    headers=headers, 
+                    proxies=proxies, 
+                    timeout=current_timeout
+                )
+                response.raise_for_status()
+                
+                result = response.json()
+                print(f"[请求] 成功 {attempt_str}")
+                return result, retry_count
+        
+        except requests.exceptions.Timeout as e:
+            last_error = e
+            error_msg = f"[请求] 超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
+            print(error_msg)
+            update_daily_counter("timeout")
+            
+            # 超时错误总是重试（除了最后一次）
+            if attempt < max_retries - 1:
+                retry_count += 1
+                update_daily_counter("retry")
+                wait_time = 2 ** attempt  # 指数退避: 1s, 2s, 4s
+                print(f"[重试] 超时错误，{wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+        
+        except requests.exceptions.ConnectionError as e:
+            last_error = e
+            error_msg = f"[请求] 连接错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}"
+            print(error_msg)
+            
+            # 连接错误也应该重试
+            if attempt < max_retries - 1:
+                retry_count += 1
+                update_daily_counter("retry")
+                wait_time = 2 ** attempt
+                print(f"[重试] 连接错误，{wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+        
+        except requests.exceptions.HTTPError as e:
+            last_error = e
+            status_code = e.response.status_code if hasattr(e, 'response') else 'unknown'
+            error_msg = f"[请求] HTTP错误 {status_code} (尝试 {attempt + 1}/{max_retries}): {str(e)}"
+            print(error_msg)
+            
+            # 5xx 错误重试，4xx 错误不重试
+            if 500 <= status_code < 600 and attempt < max_retries - 1:
+                retry_count += 1
+                update_daily_counter("retry")
+                wait_time = 2 ** attempt
+                print(f"[重试] 服务器错误，{wait_time}秒后重试...")
+                time.sleep(wait_time)
+                continue
+            else:
+                # 4xx 错误或已是最后一次尝试
+                break
+        
+        except Exception as e:
+            last_error = e
+            print(f"[请求] 失败 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+            
+            # 其他错误不重试
+            break
+    
+    # 所有尝试都失败了
+    raise last_error
 
 @app.route('/debug/stats', methods=['GET'])
 def debug_stats():
     """获取调试统计信息"""
+    # 实时检查调试模式
     debug_enabled = check_debug_mode()
     cache_dir = os.getenv("CACHE_DIR")
-
+    
     if not debug_enabled:
         return jsonify({"error": "Debug mode not enabled"}), 403
-
+    
     if not cache_dir:
         return jsonify({"error": "Cache directory not configured"}), 400
-
+    
     try:
         cache_path = Path(cache_dir)
         today = datetime.now().strftime("%Y%m%d")
         counter_file = cache_path / f"CALLS_{today}.json"
-
+        
         if counter_file.exists():
             with open(counter_file, 'r', encoding='utf-8') as f:
                 stats = json.load(f)
@@ -997,18 +702,10 @@ def debug_stats():
                 "failed": 0,
                 "timeout": 0,
                 "retry": 0,
-                "last_updated": datetime.now().isoformat()
+                "last_updated": None
             })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
-
-@app.route('/debug/apis', methods=['GET'])
-def debug_apis():
-    """获取所有API的状态"""
-    return jsonify({
-        "free_apis": FREE_APIS,
-        "available_apis": list(AVAILABLE_APIS)
-    })
 
 @app.route('/debug/concurrency', methods=['GET'])
 def debug_concurrency():
@@ -1053,16 +750,13 @@ def debug_concurrency():
             "failed": today_failed
         },
         "last_error": last_error,
-        "free_apis": {
-            "total": len(FREE_APIS),
-            "available": len(AVAILABLE_APIS),
-            "api_list": list(AVAILABLE_APIS)
-        }
+        "retry_eligible": should_retry()
     })
 
 @app.route('/debug', methods=['GET'])
 def debug_page():
     """调试页面"""
+    # 实时检查调试模式
     debug_enabled = check_debug_mode()
     if not debug_enabled:
         return "Debug mode not enabled", 403
@@ -1071,7 +765,7 @@ def debug_page():
     <html>
     <head>
         <meta charset="utf-8">
-        <title>多Free API代理调试面板</title>
+        <title>API 代理调试面板</title>
         <style>
             body {
                 font-family: Arial, sans-serif;
@@ -1170,6 +864,7 @@ def debug_page():
                 background-color: #e2e3e5;
                 border-color: #d6d8db;
             }
+            /* 测试聊天样式 */
             .chat-container {
                 display: flex;
                 flex-direction: column;
@@ -1267,68 +962,19 @@ def debug_page():
             .tab-content.active {
                 display: block;
             }
-            .api-status {
-                margin: 10px 0;
-                padding: 10px;
-                border-radius: 5px;
-            }
-            .api-status.available {
-                background-color: #d4edda;
-                border: 1px solid #c3e6cb;
-            }
-            .api-status.unavailable {
-                background-color: #f8d7da;
-                border: 1px solid #f5c6cb;
-            }
-            .auto-refresh-control {
-                margin: 15px 0;
-                padding: 15px;
-                background-color: #f8f9fa;
-                border-radius: 5px;
-                border: 1px solid #dee2e6;
-            }
-            .auto-refresh-control label {
-                font-weight: bold;
-                color: #333;
-                margin-right: 10px;
-            }
-            .auto-refresh-control input[type="number"] {
-                width: 80px;
-                padding: 5px;
-                border: 1px solid #ddd;
-                border-radius: 4px;
-                margin: 0 10px;
-            }
-            .auto-refresh-status {
-                margin-left: 10px;
-                font-size: 13px;
-                color: #666;
-            }
         </style>
     </head>
     <body>
         <div class="container">
-            <h1>🔍 多Free API代理调试面板</h1>
+            <h1>🔍 API 代理调试面板</h1>
             
             <div class="tabs">
                 <div class="tab active" onclick="showTab('stats')">统计信息</div>
-                <div class="tab" onclick="showTab('apis')">API状态</div>
                 <div class="tab" onclick="showTab('chat')">测试聊天</div>
             </div>
             
             <!-- 统计信息标签页 -->
             <div id="stats-tab" class="tab-content active">
-                <div class="auto-refresh-control">
-                    <label>
-                        <input type="checkbox" id="autoRefreshCheckbox" onchange="toggleAutoRefresh()">
-                        启用自动刷新
-                    </label>
-                    <label for="refreshInterval">
-                        刷新间隔(秒):
-                    </label>
-                    <input type="number" id="refreshInterval" value="30" min="15" max="120" onchange="updateRefreshInterval()">
-                    <span class="auto-refresh-status" id="autoRefreshStatus">自动刷新: 已关闭</span>
-                </div>
                 <div class="stats">
                     <div class="stat-item">
                         <span class="stat-label">总调用次数:</span>
@@ -1387,18 +1033,12 @@ def debug_page():
                 <button class="refresh-btn" onclick="refreshStats()">刷新统计</button>
             </div>
             
-            <!-- API状态标签页 -->
-            <div id="apis-tab" class="tab-content">
-                <h2>📡 Free API 状态</h2>
-                <div id="apiList"></div>
-                <button class="refresh-btn" onclick="refreshApis()" style="margin-top: 15px;">刷新API状态</button>
-            </div>
-            
             <!-- 测试聊天标签页 -->
             <div id="chat-tab" class="tab-content">
                 <h2>💬 AI 聊天测试</h2>
                 <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 5px; font-size: 13px; color: #666;">
-                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认1000。
+                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认1000。如果回复被截断,可以增大此值。
+                    <br><strong>📍 修改位置:</strong> 后端代码 local_api_proxy.py 第517行 (execute_with_retry函数中的data.get("max_tokens", 2000))
                 </div>
                 <div style="margin-bottom: 10px;">
                     <label for="maxTokensInput" style="font-weight: bold; color: #333;">Max Tokens:</label>
@@ -1418,6 +1058,7 @@ def debug_page():
         
         <script>
             function showTab(tabName) {
+                // 隐藏所有标签页内容
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
                 });
@@ -1425,6 +1066,7 @@ def debug_page():
                     tab.classList.remove('active');
                 });
                 
+                // 显示选中的标签页
                 document.getElementById(tabName + '-tab').classList.add('active');
                 event.target.classList.add('active');
             }
@@ -1474,36 +1116,6 @@ def debug_page():
                     });
             }
             
-            function refreshApis() {
-                fetch('/debug/apis')
-                    .then(r => r.json())
-                    .then(data => {
-                        const apiListDiv = document.getElementById('apiList');
-                        apiListDiv.innerHTML = '';
-                        
-                        const apis = data.free_apis || {};
-                        const availableApis = data.available_apis || [];
-                        
-                        for (const [name, config] of Object.entries(apis)) {
-                            const isAvailable = availableApis.includes(name);
-                            const div = document.createElement('div');
-                            div.className = 'api-status ' + (isAvailable ? 'available' : 'unavailable');
-                            div.innerHTML = `
-                                <strong>${name}</strong>
-                                <span style="float: right;">${isAvailable ? '✅ 可用' : '❌ 不可用'}</span>
-                                <br><small>模型: ${config.model || 'gpt-3.5-turbo'}</small>
-                                <br><small>成功: ${config.success_count || 0} | 失败: ${config.failure_count || 0}</small>
-                                ${config.last_test_result ? '<br><small>最后测试: ' + config.last_test_result + '</small>' : ''}
-                            `;
-                            apiListDiv.appendChild(div);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        document.getElementById('apiList').innerHTML = '<p style="color: red;">获取API状态失败</p>';
-                    });
-            }
-            
             function addMessage(role, content, latency = null, error = false) {
                 const messagesContainer = document.getElementById('chatMessages');
                 const messageDiv = document.createElement('div');
@@ -1529,23 +1141,28 @@ def debug_page():
                 
                 if (!message) return;
                 
+                // 显示用户消息
                 addMessage('user', message);
                 
+                // 清空输入框并禁用按钮
                 input.value = '';
                 sendBtn.disabled = true;
                 sendBtn.textContent = '发送中...';
                 
+                // 显示加载消息
+                const loadingId = 'loading-' + Date.now();
                 addMessage('assistant', '<span class="loading">AI 正在思考...</span>', null, false);
                 
                 const startTime = Date.now();
                 
+                // 发送请求到API
                 fetch('/v1/chat/completions', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify({
-                        model: 'any-model',
+                        model: 'any-model', // 代理会自动转换为 free 模型
                         messages: [
                             { role: 'user', content: message }
                         ],
@@ -1557,6 +1174,7 @@ def debug_page():
                     const endTime = Date.now();
                     const latency = endTime - startTime;
                     
+                    // 移除加载消息
                     const loadingMessages = document.querySelectorAll('.message .loading');
                     loadingMessages.forEach(msg => msg.parentElement.remove());
                     
@@ -1579,12 +1197,14 @@ def debug_page():
                     const endTime = Date.now();
                     const latency = endTime - startTime;
                     
+                    // 移除加载消息
                     const loadingMessages = document.querySelectorAll('.message .loading');
                     loadingMessages.forEach(msg => msg.parentElement.remove());
                     
                     addMessage('assistant', `错误: ${error.message}`, latency, true);
                 })
                 .finally(() => {
+                    // 重新启用按钮
                     sendBtn.disabled = false;
                     sendBtn.textContent = '发送';
                 });
@@ -1598,91 +1218,75 @@ def debug_page():
             
             // 页面加载时刷新统计
             refreshStats();
-            refreshApis();
             
-            // 自动刷新相关变量
-            let autoRefreshTimer = null;
-            let autoRefreshEnabled = false;
-            let refreshInterval = 30;
-
-            // 切换自动刷新
-            function toggleAutoRefresh() {
-                const checkbox = document.getElementById('autoRefreshCheckbox');
-                autoRefreshEnabled = checkbox.checked;
-
-                if (autoRefreshEnabled) {
-                    updateRefreshInterval();
-                } else {
-                    if (autoRefreshTimer) {
-                        clearInterval(autoRefreshTimer);
-                        autoRefreshTimer = null;
-                    }
-                    document.getElementById('autoRefreshStatus').textContent = '自动刷新: 已关闭';
-                }
-            }
-
-            // 更新刷新间隔
-            function updateRefreshInterval() {
-                const intervalInput = document.getElementById('refreshInterval');
-                let newInterval = parseInt(intervalInput.value);
-
-                // 验证范围
-                if (newInterval < 15) newInterval = 15;
-                if (newInterval > 120) newInterval = 120;
-
-                refreshInterval = newInterval;
-                intervalInput.value = newInterval;
-
-                if (autoRefreshEnabled) {
-                    // 清除旧的定时器
-                    if (autoRefreshTimer) {
-                        clearInterval(autoRefreshTimer);
-                    }
-
-                    // 设置新的定时器
-                    autoRefreshTimer = setInterval(refreshStats, refreshInterval * 1000);
-                    document.getElementById('autoRefreshStatus').textContent = `自动刷新: 已启用 (${refreshInterval}秒)`;
-                }
-            }
+            // 每30秒自动刷新统计
+            setInterval(refreshStats, 30000);
             
             // 初始化聊天界面
-            document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用多Free API聊天测试！您可以在这里直接测试代理功能。</div>';
+            document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用AI聊天测试！您可以在这里直接测试代理功能。</div>';
         </script>
     </body>
     </html>
     """
     return html
 
-def main():
-    """主函数"""
-    ensure_cache_dir()
-
-    # 直接从.env加载API配置
-    load_api_configs()
-
-    # 启动时测试所有API（仅启动时测试一次）
-    test_all_apis_startup()
-
+if __name__ == '__main__':
+    # 检测是否为守护进程子进程
+    IS_DAEMON_CHILD = os.getenv('DAEMON_CHILD') == '1'
+    
+    # 端口检查（非守护进程子进程时）
+    if not IS_DAEMON_CHILD and is_port_in_use(5000):
+        print("=" * 60)
+        print("错误：端口 5000 已被占用")
+        print("=" * 60)
+        print("可能的原因：")
+        print("1. 另一个 local_api_proxy.py 实例正在运行")
+        print("2. 守护进程正在运行")
+        print()
+        print("解决方案：")
+        print("1. 如果守护进程正在运行，请使用：python daemon.py stop")
+        print("2. 查找并停止占用端口的进程：")
+        print("   netstat -ano | findstr :5000")
+        print("   taskkill /PID <进程ID> /F")
+        print("=" * 60)
+        sys.exit(1)
+    
+    print("=" * 60)
+    print("本地 API 代理服务启动中...")
+    print("=" * 60)
+    print("监听地址: http://localhost:5000")
+    print("API 端点: http://localhost:5000/v1/chat/completions")
+    print("模型列表: http://localhost:5000/v1/models")
+    print("健康检查: http://localhost:5000/health")
+    print("\n[监控] 启动文件监控...")
+    print(f"[监控] 监控文件: {', '.join(WATCHED_FILES)}")
+    print("[监控] 文件变化时将自动重新加载配置")
+    
+    # 检查调试模式
+    if DEBUG_MODE:
+        print("\n[调试] 调试模式已启用")
+        if CACHE_DIR:
+            ensure_cache_dir()
+        else:
+            print("[调试] 未配置 CACHE_DIR，消息不会被保存")
+    else:
+        print("\n[调试] 调试模式未启用 (创建 DEBUG_MODE.txt 文件以启用)")
+    
+    print("=" * 60)
+    print()
+    
     # 启动文件监控
     observer = start_file_watcher()
-
-    port = int(os.getenv("PORT", "5000"))
-
-    if is_port_in_use(port):
-        print(f"[错误] 端口 {port} 已被占用")
-        sys.exit(1)
-
-    print(f"[启动] 多Free API代理服务启动在端口 {port}")
-    print(f"[启动] 可用API: {len(AVAILABLE_APIS)}/{len(FREE_APIS)}")
-    print(f"[启动] API连续失败{MAX_CONSECUTIVE_FAILURES}次后将自动标记为无效")
-
+    
     try:
-        app.run(host='0.0.0.0', port=port, debug=False, threaded=True)
+        app.run(host='localhost', port=5000, debug=False, use_reloader=False)
     except KeyboardInterrupt:
-        print("\n[停止] 服务正在停止...")
-        observer.stop()
-        observer.join()
-        print("[停止] 服务已停止")
-
-if __name__ == "__main__":
-    main()
+        print("\n[关闭] 正在关闭服务...")
+    except Exception as e:
+        print(f"\n[错误] 服务异常退出: {e}")
+        raise
+    finally:
+        if observer:
+            observer.stop()
+            observer.join()
+        print("[关闭] 服务已关闭")
