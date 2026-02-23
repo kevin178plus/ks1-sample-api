@@ -2142,7 +2142,7 @@ def debug_page():
                                 <td><small>${details[apiName]?.weight !== undefined ? 'N/A' : 'N/A'}</small></td>
                                 <td><span class="status-badge ${isEnabled ? 'enabled' : 'disabled'}">${isEnabled ? '已启用' : '已停用'}</span></td>
                                 <td>
-                                    <input type="number" class="weight-input" id="weight_${apiName}" value="${weight}" min="0" max="586">
+                                    <input type="number" class="weight-input" id="weight_${apiName}" value="${weight}" min="0" max="999">
                                     <button class="btn-save-weight" onclick="saveWeight('${apiName}')">保存</button>
                                 </td>
                                 <td>
