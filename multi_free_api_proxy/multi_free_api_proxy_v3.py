@@ -4,8 +4,8 @@
 """
 
 import os
-import json
 import sys
+import json
 import time
 import uuid
 import threading
@@ -21,6 +21,30 @@ from collections import deque
 from flask import Flask, request, jsonify
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
+
+# 导入本项目的配置（使用直接读取文件方式）
+script_dir = Path(__file__).parent
+config_file = script_dir / "config.py"
+if config_file.exists():
+    spec = importlib.util.spec_from_file_location("proxy_config", str(config_file))
+    proxy_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(proxy_config)
+else:
+    # 如果配置文件不存在，使用默认值
+    class DefaultConfig:
+        DEFAULT_MAX_TOKENS = 2000
+        DEFAULT_TEMPERATURE = 0.7
+        DEFAULT_TOP_P = 1.0
+        DEFAULT_TOP_LOG_PROBS = 0
+        DEFAULT_STOP = None
+        DEFAULT_PRESENCE_PENALTY = 0.0
+        DEFAULT_FREQUENCY_PENALTY = 0.0
+        DEFAULT_SEED = None
+        TIMEOUT_BASE = 45
+        TIMEOUT_RETRY = 60
+        MAX_RETRIES = 3
+        MAX_CONCURRENT_REQUESTS = 5
+    proxy_config = DefaultConfig()
 
 # 导入 iflow_sdk
 try:
@@ -41,6 +65,14 @@ WATCHED_FILES = {'.env', 'multi_free_api_proxy_v3.py'}
 DEBUG_MODE = False
 CACHE_DIR = None
 HTTP_PROXY = None
+
+# API 权重配置
+API_WEIGHTS = {}  # 存储每个 API 的权重
+API_WEIGHTS_LOCK = threading.Lock()  # 权重操作的锁
+
+# 特别权重阈值
+SPECIAL_WEIGHT_THRESHOLD = 100  # 权重大于此值时，下次请求必然选中
+MIN_AUTO_DECREASE_WEIGHT = 50  # 自动减少权重的下限
 
 # 并发控制相关
 MAX_CONCURRENT_REQUESTS = 5
@@ -254,6 +286,17 @@ CACHE_DIR = os.getenv("CACHE_DIR")
 HTTP_PROXY = os.getenv("HTTP_PROXY")
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
 
+def init_default_weights():
+    """初始化默认权重（所有API默认权重为10）"""
+    global API_WEIGHTS, FREE_APIS
+    
+    API_WEIGHTS.clear()
+    for api_name in FREE_APIS:
+        # 默认权重为 10
+        API_WEIGHTS[api_name] = 10
+    
+    print(f"[权重] 默认权重已初始化: {API_WEIGHTS}")
+
 def test_api_startup(api_name):
     """启动时测试API是否可用"""
     global FREE_APIS, HTTP_PROXY
@@ -399,6 +442,8 @@ def load_api_configs():
             model_name = getattr(config_module, "MODEL_NAME", None)
             use_proxy = getattr(config_module, "USE_PROXY", False)
             use_sdk = getattr(config_module, "USE_SDK", False)
+            available_models = getattr(config_module, "AVAILABLE_MODELS", [])
+            max_tokens = getattr(config_module, "MAX_TOKENS", proxy_config.DEFAULT_MAX_TOKENS)
             response_format = getattr(config_module, "RESPONSE_FORMAT", {
                 "content_fields": ["content"],
                 "merge_fields": False,
@@ -428,6 +473,8 @@ def load_api_configs():
                 "api_key": api_key,
                 "base_url": base_url,
                 "model": model_name,
+                "available_models": available_models,
+                "max_tokens": max_tokens,  # 从各 free 的 config.py 读取
                 "use_proxy": use_proxy,
                 "response_format": response_format,
                 "available": False,
@@ -453,7 +500,11 @@ def load_api_configs():
     for api_name, api_config in FREE_APIS.items():
         proxy_info = "代理" if api_config.get('use_proxy') else "直连"
         sdk_info = "SDK" if api_config.get('use_sdk') else "HTTP"
-        print(f"[配置] {api_name}: {sdk_info}/{proxy_info}, MODEL={api_config['model']}")
+        max_tokens_info = api_config.get('max_tokens', proxy_config.DEFAULT_MAX_TOKENS)
+        print(f"[配置] {api_name}: {sdk_info}/{proxy_info}, MODEL={api_config['model']}, MAX_TOKENS={max_tokens_info}")
+    
+    # 初始化默认权重（按加载顺序递减）
+    init_default_weights()
 
 def test_all_apis_startup():
     """启动时测试所有API"""
@@ -474,20 +525,76 @@ def test_all_apis_startup():
             print(f"[启动测试] 可用API列表: {list(AVAILABLE_APIS)}")
 
 def get_next_available_api():
-    """获取下一个可用的API"""
-    global AVAILABLE_APIS
-
+    """获取下一个可用的API（基于权重选择）"""
+    global AVAILABLE_APIS, API_WEIGHTS, SPECIAL_WEIGHT_THRESHOLD
+    
     with API_LOCK:
         if not AVAILABLE_APIS:
             return None
-
-        # 获取队列中的第一个API
-        api_name = AVAILABLE_APIS[0]
-
-        # 将其移到队列末尾，实现轮换
-        AVAILABLE_APIS.rotate(-1)
-
-        return api_name
+    
+    # 获取当前可用的API列表
+    available_list = list(AVAILABLE_APIS)
+    
+    if not available_list:
+        return None
+    
+    # 检查是否有特别权重的API（权重大于100）
+    special_weight_apis = []
+    with API_WEIGHTS_LOCK:
+        for api_name in available_list:
+            weight = API_WEIGHTS.get(api_name, 10)
+            if weight > SPECIAL_WEIGHT_THRESHOLD:
+                special_weight_apis.append((api_name, weight))
+    
+    # 如果有特别权重的API，选择权重最大的那个
+    if special_weight_apis:
+        # 按权重降序排序，选择权重最大的
+        special_weight_apis.sort(key=lambda x: x[1], reverse=True)
+        selected_api = special_weight_apis[0][0]
+        
+        # 将选中的API移到队列末尾
+        with API_LOCK:
+            if selected_api in AVAILABLE_APIS:
+                AVAILABLE_APIS.remove(selected_api)
+                AVAILABLE_APIS.append(selected_api)
+        
+        print(f"[权重] 特别权重选中: {selected_api} (权重: {special_weight_apis[0][1]})")
+        return selected_api
+    
+    # 正常权重选择：按权重随机选择
+    import random
+    
+    with API_WEIGHTS_LOCK:
+        weights = [API_WEIGHTS.get(api_name, 10) for api_name in available_list]
+    
+    total_weight = sum(weights)
+    if total_weight <= 0:
+        # 权重都为0或负数，使用轮询
+        with API_LOCK:
+            api_name = AVAILABLE_APIS[0]
+            AVAILABLE_APIS.rotate(-1)
+            return api_name
+    
+    # 按权重随机选择
+    r = random.randint(1, total_weight)
+    cumulative = 0
+    selected_api = None
+    for i, api_name in enumerate(available_list):
+        cumulative += weights[i]
+        if r <= cumulative:
+            selected_api = api_name
+            break
+    
+    if selected_api is None:
+        selected_api = available_list[0]
+    
+    # 将选中的API移到队列末尾
+    with API_LOCK:
+        if selected_api in AVAILABLE_APIS:
+            AVAILABLE_APIS.remove(selected_api)
+            AVAILABLE_APIS.append(selected_api)
+    
+    return selected_api
 
 def mark_api_failure(api_name):
     """标记API失败，连续失败超过阈值则从可用列表移除"""
@@ -530,6 +637,26 @@ def mark_api_success(api_name):
             api_config["available"] = True
             print(f"[API状态] {api_name} 已恢复并重新加入可用列表")
 
+def decrease_api_weight(api_name):
+    """服务成功后自动减少API权重
+    - 权重大于100时，每次服务后减1
+    - 减到50就不再自动减少
+    """
+    global API_WEIGHTS, MIN_AUTO_DECREASE_WEIGHT, SPECIAL_WEIGHT_THRESHOLD
+    
+    with API_WEIGHTS_LOCK:
+        current_weight = API_WEIGHTS.get(api_name, 10)
+        
+        # 只有权重大于特别权重阈值时才减少
+        if current_weight > SPECIAL_WEIGHT_THRESHOLD:
+            # 减少到50为止
+            if current_weight > MIN_AUTO_DECREASE_WEIGHT:
+                new_weight = current_weight - 1
+                API_WEIGHTS[api_name] = new_weight
+                print(f"[权重] {api_name} 权重自动减少: {current_weight} -> {new_weight}")
+            else:
+                print(f"[权重] {api_name} 权重已降至最低自动减少阈值 ({MIN_AUTO_DECREASE_WEIGHT})，不再自动减少")
+
 def execute_with_free_api(data, message_id):
     """使用Free API执行请求"""
     global FREE_APIS, HTTP_PROXY
@@ -538,9 +665,9 @@ def execute_with_free_api(data, message_id):
     last_error = None
     used_api_name = None  # 记录最终使用的API名称
 
-    max_retries = 3
-    timeout_base = 45
-    timeout_retry = 60
+    max_retries = proxy_config.MAX_RETRIES
+    timeout_base = proxy_config.TIMEOUT_BASE
+    timeout_retry = proxy_config.TIMEOUT_RETRY
 
     for attempt in range(max_retries):
         api_name = get_next_available_api()
@@ -551,7 +678,28 @@ def execute_with_free_api(data, message_id):
         api_config = FREE_APIS[api_name]
         api_key = api_config["api_key"]
         base_url = api_config["base_url"]
-        model = api_config.get("model", "gpt-3.5-turbo")
+        
+        # 支持动态模型选择
+        available_models = api_config.get("available_models", [])
+        use_weighted = api_config.get("use_weighted_model", False)
+        
+        if use_weighted and available_models:
+            # 按权重随机选择模型
+            import random
+            n = len(available_models)
+            weights = list(range(n, 0, -1))
+            total_weight = sum(weights)
+            r = random.randint(1, total_weight)
+            cumulative = 0
+            model = available_models[0]
+            for i, m in enumerate(available_models):
+                cumulative += weights[i]
+                if r <= cumulative:
+                    model = m
+                    break
+        else:
+            model = api_config.get("model", "gpt-3.5-turbo")
+        
         use_proxy = api_config.get("use_proxy", False)
         use_sdk = api_config.get("use_sdk", False)
 
@@ -611,6 +759,8 @@ def execute_with_free_api(data, message_id):
 
                 # 标记成功，重置连续失败计数
                 mark_api_success(api_name)
+                # 特别权重自动减少
+                decrease_api_weight(api_name)
                 used_api_name = api_name
 
                 return result, retry_count, used_api_name
@@ -656,9 +806,9 @@ def execute_with_free_api(data, message_id):
             request_data = {
                 "model": model,
                 "messages": data.get("messages", []),
-                "temperature": data.get("temperature", 0.7),
-                "max_tokens": data.get("max_tokens", 2000),
-                "top_p": data.get("top_p", 1),
+                "temperature": data.get("temperature", proxy_config.DEFAULT_TEMPERATURE),
+                "max_tokens": data.get("max_tokens", api_config.get("max_tokens", proxy_config.DEFAULT_MAX_TOKENS)),
+                "top_p": data.get("top_p", proxy_config.DEFAULT_TOP_P),
             }
 
             response = session.post(
@@ -675,6 +825,8 @@ def execute_with_free_api(data, message_id):
 
             # 标记成功，重置连续失败计数
             mark_api_success(api_name)
+            # 特别权重自动减少
+            decrease_api_weight(api_name)
             used_api_name = api_name
 
             return result, retry_count, used_api_name
@@ -1007,7 +1159,219 @@ def debug_apis():
     """获取所有API的状态"""
     return jsonify({
         "free_apis": FREE_APIS,
-        "available_apis": list(AVAILABLE_APIS)
+        "available_apis": list(AVAILABLE_APIS),
+        "api_weights": API_WEIGHTS
+    })
+
+@app.route('/debug/api/enable', methods=['POST'])
+def enable_api():
+    """启用指定的API"""
+    global FREE_APIS, AVAILABLE_APIS, API_LOCK
+    
+    data = request.json
+    api_name = data.get('api_name')
+    
+    if not api_name:
+        return jsonify({"error": "Missing api_name"}), 400
+    
+    if api_name not in FREE_APIS:
+        return jsonify({"error": f"API {api_name} not found"}), 404
+    
+    api_config = FREE_APIS[api_name]
+    
+    # 检查是否有 API Key
+    if not api_config.get("api_key"):
+        return jsonify({"error": f"API {api_name} has no API key configured"}), 400
+    
+    with API_LOCK:
+        if api_name not in AVAILABLE_APIS:
+            AVAILABLE_APIS.append(api_name)
+        api_config["available"] = True
+        api_config["consecutive_failures"] = 0
+    
+    print(f"[API管理] 已启用 {api_name}")
+    
+    return jsonify({
+        "success": True, 
+        "api_name": api_name, 
+        "message": f"API {api_name} 已启用"
+    })
+
+@app.route('/debug/api/disable', methods=['POST'])
+def disable_api():
+    """停用指定的API"""
+    global FREE_APIS, AVAILABLE_APIS, API_LOCK
+    
+    data = request.json
+    api_name = data.get('api_name')
+    
+    if not api_name:
+        return jsonify({"error": "Missing api_name"}), 400
+    
+    if api_name not in FREE_APIS:
+        return jsonify({"error": f"API {api_name} not found"}), 404
+    
+    api_config = FREE_APIS[api_name]
+    
+    with API_LOCK:
+        if api_name in AVAILABLE_APIS:
+            AVAILABLE_APIS.remove(api_name)
+        api_config["available"] = False
+    
+    print(f"[API管理] 已停用 {api_name}")
+    
+    return jsonify({
+        "success": True, 
+        "api_name": api_name, 
+        "message": f"API {api_name} 已停用"
+    })
+
+@app.route('/debug/api/weight', methods=['POST'])
+def set_api_weight():
+    """设置API的权重"""
+    global API_WEIGHTS, API_WEIGHTS_LOCK
+    
+    data = request.json
+    api_name = data.get('api_name')
+    weight = data.get('weight')
+    
+    if not api_name:
+        return jsonify({"error": "Missing api_name"}), 400
+    
+    if weight is None:
+        return jsonify({"error": "Missing weight"}), 400
+    
+    try:
+        weight = int(weight)
+        if weight < 0:
+            return jsonify({"error": "Weight must be >= 0"}), 400
+    except ValueError:
+        return jsonify({"error": "Invalid weight value"}), 400
+    
+    # 权重立即生效
+    with API_WEIGHTS_LOCK:
+        if weight == 0:
+            # 权重为0时，从权重字典中移除
+            API_WEIGHTS.pop(api_name, None)
+        else:
+            API_WEIGHTS[api_name] = weight
+    
+    # 输出特别权重提示
+    if weight > 100:
+        print(f"[API管理] {api_name} 权重设置为 {weight} (特别权重: 下次请求必然选中，服务一次后自动减1至50)")
+    else:
+        print(f"[API管理] {api_name} 权重设置为 {weight} (立即生效)")
+    
+    return jsonify({
+        "success": True, 
+        "api_name": api_name, 
+        "weight": weight,
+        "message": f"API {api_name} 权重已设置为 {weight} (立即生效)"
+    })
+
+@app.route('/debug/api/weight', methods=['GET'])
+def get_api_weights():
+    """获取所有API的权重配置"""
+    global API_WEIGHTS, FREE_APIS, API_WEIGHTS_LOCK
+    
+    # 构建完整的权重信息
+    weights_info = {}
+    for api_name in FREE_APIS:
+        with API_WEIGHTS_LOCK:
+            weight = API_WEIGHTS.get(api_name, 10)
+        weights_info[api_name] = {
+            "weight": weight,
+            "enabled": api_name in AVAILABLE_APIS
+        }
+    
+    with API_WEIGHTS_LOCK:
+        current_weights = dict(API_WEIGHTS)
+    
+    return jsonify({
+        "api_weights": current_weights,
+        "api_details": weights_info
+    })
+
+@app.route('/debug/api/weight/reset', methods=['POST'])
+def reset_api_weights():
+    """重置所有API权重为默认值（10）"""
+    global API_WEIGHTS, FREE_APIS, API_WEIGHTS_LOCK
+    
+    # 默认权重为 10
+    with API_WEIGHTS_LOCK:
+        API_WEIGHTS.clear()
+        for api_name in FREE_APIS:
+            API_WEIGHTS[api_name] = 10
+    
+    print(f"[API管理] 权重已重置为默认值 (10)")
+    
+    return jsonify({
+        "success": True, 
+        "message": "权重已重置为默认值 (10)",
+        "api_weights": API_WEIGHTS
+    })
+
+@app.route('/debug/api/model', methods=['POST'])
+def set_api_model():
+    """设置API使用的模型"""
+    global FREE_APIS
+    
+    data = request.json
+    api_name = data.get('api_name')
+    model = data.get('model')
+    use_weighted = data.get('use_weighted', False)  # 是否使用权重随机选择
+    
+    if not api_name:
+        return jsonify({"error": "Missing api_name"}), 400
+    
+    if api_name not in FREE_APIS:
+        return jsonify({"error": f"API {api_name} not found"}), 404
+    
+    api_config = FREE_APIS[api_name]
+    available_models = api_config.get("available_models", [])
+    
+    if model is None and not use_weighted:
+        return jsonify({"error": "Missing model or use_weighted"}), 400
+    
+    # 如果指定了模型，验证模型是否在可用列表中
+    if model and available_models and model not in available_models:
+        # 允许不在列表中的模型（可能是自定义的）
+        pass
+    
+    if use_weighted:
+        # 使用权重随机选择
+        api_config["use_weighted_model"] = True
+        api_config["model"] = available_models[0] if available_models else model
+    else:
+        api_config["use_weighted_model"] = False
+        api_config["model"] = model
+    
+    mode_str = "权重随机" if use_weighted else model
+    print(f"[API管理] {api_name} 模型设置为 {mode_str}")
+    
+    return jsonify({
+        "success": True, 
+        "api_name": api_name, 
+        "model": model,
+        "use_weighted": use_weighted,
+        "message": f"API {api_name} 模型已设置为 {mode_str}"
+    })
+
+@app.route('/debug/api/model', methods=['GET'])
+def get_api_models():
+    """获取所有API的模型配置"""
+    global FREE_APIS
+    
+    models_info = {}
+    for api_name, api_config in FREE_APIS.items():
+        models_info[api_name] = {
+            "current_model": api_config.get("model"),
+            "available_models": api_config.get("available_models", []),
+            "use_weighted_model": api_config.get("use_weighted_model", False)
+        }
+    
+    return jsonify({
+        "api_models": models_info
     })
 
 @app.route('/debug/concurrency', methods=['GET'])
@@ -1304,6 +1668,77 @@ def debug_page():
                 font-size: 13px;
                 color: #666;
             }
+            .api-management-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 15px;
+            }
+            .api-management-table th, .api-management-table td {
+                padding: 10px;
+                text-align: left;
+                border-bottom: 1px solid #ddd;
+            }
+            .api-management-table th {
+                background-color: #f8f9fa;
+                font-weight: bold;
+            }
+            .weight-input {
+                width: 60px;
+                padding: 5px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                text-align: center;
+            }
+            .btn-enable {
+                background-color: #28a745;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .btn-disable {
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .btn-save-weight {
+                background-color: #007bff;
+                color: white;
+                border: none;
+                padding: 5px 10px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 12px;
+            }
+            .btn-reset {
+                background-color: #6c757d;
+                color: white;
+                border: none;
+                padding: 8px 15px;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 13px;
+                margin-left: 10px;
+            }
+            .status-badge {
+                padding: 3px 8px;
+                border-radius: 12px;
+                font-size: 12px;
+            }
+            .status-badge.enabled {
+                background-color: #d4edda;
+                color: #155724;
+            }
+            .status-badge.disabled {
+                background-color: #f8d7da;
+                color: #721c24;
+            }
         </style>
     </head>
     <body>
@@ -1314,6 +1749,7 @@ def debug_page():
                 <div class="tab active" onclick="showTab('stats')">统计信息</div>
                 <div class="tab" onclick="showTab('apis')">API状态</div>
                 <div class="tab" onclick="showTab('chat')">测试聊天</div>
+                <div class="tab" onclick="showTab('manage')">API管理</div>
             </div>
             
             <!-- 统计信息标签页 -->
@@ -1398,13 +1834,13 @@ def debug_page():
             <div id="chat-tab" class="tab-content">
                 <h2>💬 AI 聊天测试</h2>
                 <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 5px; font-size: 13px; color: #666;">
-                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认1000。
+                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认{proxy_config.DEFAULT_MAX_TOKENS}。
                 </div>
                 <div style="margin-bottom: 10px;">
                     <label for="maxTokensInput" style="font-weight: bold; color: #333;">Max Tokens:</label>
-                    <input type="number" id="maxTokensInput" value="1000" min="100" max="4000" step="100" 
+                    <input type="number" id="maxTokensInput" value="{proxy_config.DEFAULT_MAX_TOKENS}" min="100" max="4000" step="100" 
                            style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 100px; margin-left: 10px;">
-                    <span style="color: #666; font-size: 12px;">(默认: 1000, 范围: 100-4000)</span>
+                    <span style="color: #666; font-size: 12px;">(默认: {proxy_config.DEFAULT_MAX_TOKENS}, 范围: 100-4000)</span>
                 </div>
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages"></div>
@@ -1414,9 +1850,45 @@ def debug_page():
                     </div>
                 </div>
             </div>
+            
+            <!-- API管理标签页 -->
+            <div id="manage-tab" class="tab-content">
+                <h2>⚙️ API 管理</h2>
+                <div style="margin-bottom: 15px; padding: 15px; background-color: #e7f3ff; border-radius: 5px; font-size: 13px;">
+                    <strong>📝 说明:</strong> 在此页面可以管理各个 Free API 的权重和启用/停用状态。
+                    <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                        <li>默认权重: <strong>10</strong></li>
+                        <li>权重越高，被选中的概率越大。权重为0时，该API不会被使用。</li>
+                        <li><strong>特别权重(&gt;100):</strong> 设置权重大于100时，下次请求必然选中该API。</li>
+                        <li><strong>自动减少:</strong> 特别权重每次服务成功后自动减1，减到50为止不再减少。</li>
+                    </ul>
+                </div>
+                <div style="margin-bottom: 15px;">
+                    <button class="btn-reset" onclick="resetWeights()">重置权重为默认值</button>
+                    <button class="refresh-btn" onclick="refreshManage()">刷新</button>
+                </div>
+                <table class="api-management-table">
+                    <thead>
+                        <tr>
+                            <th>API名称</th>
+                            <th>当前模型</th>
+                            <th>状态</th>
+                            <th>权重</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manageTableBody">
+                        <tr><td colspan="5">加载中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
         
         <script>
+            // 从服务器获取的默认配置
+            const DEFAULT_MAX_TOKENS = {proxy_config.DEFAULT_MAX_TOKENS};
+            const DEFAULT_TEMPERATURE = {proxy_config.DEFAULT_TEMPERATURE};
+
             function showTab(tabName) {
                 document.querySelectorAll('.tab-content').forEach(content => {
                     content.classList.remove('active');
@@ -1549,8 +2021,8 @@ def debug_page():
                         messages: [
                             { role: 'user', content: message }
                         ],
-                        max_tokens: parseInt(maxTokensInput.value) || 1000,
-                        temperature: 0.7
+                        max_tokens: parseInt(maxTokensInput.value) || DEFAULT_MAX_TOKENS,
+                        temperature: DEFAULT_TEMPERATURE
                     })
                 })
                 .then(response => {
@@ -1599,6 +2071,7 @@ def debug_page():
             // 页面加载时刷新统计
             refreshStats();
             refreshApis();
+            refreshManage();
             
             // 自动刷新相关变量
             let autoRefreshTimer = null;
@@ -1647,6 +2120,177 @@ def debug_page():
             
             // 初始化聊天界面
             document.getElementById('chatMessages').innerHTML = '<div class="message assistant">欢迎使用多Free API聊天测试！您可以在这里直接测试代理功能。</div>';
+            
+            // API管理相关函数
+            function refreshManage() {
+                fetch('/debug/api/weight')
+                    .then(r => r.json())
+                    .then(data => {
+                        const tbody = document.getElementById('manageTableBody');
+                        tbody.innerHTML = '';
+                        
+                        const details = data.api_details || {};
+                        const weights = data.api_weights || {};
+                        
+                        for (const [apiName, info] of Object.entries(details)) {
+                            const tr = document.createElement('tr');
+                            const isEnabled = info.enabled;
+                            const weight = info.weight;
+                            
+                            tr.innerHTML = `
+                                <td><strong>${apiName}</strong></td>
+                                <td><small>${details[apiName]?.weight !== undefined ? 'N/A' : 'N/A'}</small></td>
+                                <td><span class="status-badge ${isEnabled ? 'enabled' : 'disabled'}">${isEnabled ? '已启用' : '已停用'}</span></td>
+                                <td>
+                                    <input type="number" class="weight-input" id="weight_${apiName}" value="${weight}" min="0" max="586">
+                                    <button class="btn-save-weight" onclick="saveWeight('${apiName}')">保存</button>
+                                </td>
+                                <td>
+                                    ${isEnabled 
+                                        ? `<button class="btn-disable" onclick="disableApi('${apiName}')">停用</button>`
+                                        : `<button class="btn-enable" onclick="enableApi('${apiName}')">启用</button>`
+                                    }
+                                </td>
+                            `;
+                            tbody.appendChild(tr);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        document.getElementById('manageTableBody').innerHTML = '<tr><td colspan="5" style="color: red;">加载失败</td></tr>';
+                    });
+            }
+            
+            function saveWeight(apiName) {
+                const weightInput = document.getElementById('weight_' + apiName);
+                const weight = parseInt(weightInput.value);
+                
+                if (isNaN(weight) || weight < 0) {
+                    alert('权重必须 >= 0');
+                    return;
+                }
+                
+                fetch('/debug/api/weight', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_name: apiName, weight: weight})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        const weightMsg = weight > 100 ? ` (特别权重: 下次请求必然选中)` : '';
+                        alert('权重已更新' + weightMsg);
+                        refreshManage();
+                    } else {
+                        alert('更新失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+            
+            function enableApi(apiName) {
+                fetch('/debug/api/enable', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_name: apiName})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('API 已启用');
+                        refreshManage();
+                    } else {
+                        alert('启用失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+            
+            function disableApi(apiName) {
+                fetch('/debug/api/disable', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({api_name: apiName})
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('API 已停用');
+                        refreshManage();
+                    } else {
+                        alert('停用失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+            
+            function resetWeights() {
+                if (!confirm('确定要重置所有权重为默认值吗？')) {
+                    return;
+                }
+                
+                fetch('/debug/api/weight/reset', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'}
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('权重已重置');
+                        refreshManage();
+                    } else {
+                        alert('重置失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
+            
+            function saveModel(apiName) {
+                const select = document.getElementById('model_' + apiName);
+                if (!select) {
+                    alert('找不到模型选择器');
+                    return;
+                }
+                const value = select.value;
+                
+                if (!value) {
+                    alert('请选择一个模型');
+                    return;
+                }
+                
+                const useWeighted = value === '__weighted__';
+                const model = useWeighted ? null : value;
+                
+                fetch('/debug/api/model', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        api_name: apiName, 
+                        model: model,
+                        use_weighted: useWeighted
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        alert('模型已更新: ' + data.message);
+                        refreshManage();
+                    } else {
+                        alert('更新失败: ' + (data.error || '未知错误'));
+                    }
+                })
+                .catch(error => {
+                    alert('请求失败: ' + error);
+                });
+            }
         </script>
     </body>
     </html>

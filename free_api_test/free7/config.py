@@ -11,6 +11,9 @@ MODEL_NAME = "z-ai/glm4.7"
 USE_PROXY = False  # 不使用代理
 USE_SDK = False  # 使用HTTP API
 
+# 请求参数默认值
+MAX_TOKENS = 2000  # 最大生成token数
+
 # 响应格式配置
 # 定义如何从响应中提取内容
 RESPONSE_FORMAT = {

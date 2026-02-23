@@ -7,6 +7,9 @@ MODEL_NAME = "openrouter/free"
 USE_PROXY = True  # 使用代理
 USE_SDK = False  # 使用HTTP API
 
+# 请求参数默认值
+MAX_TOKENS = 2000  # 最大生成token数
+
 # 响应格式配置
 RESPONSE_FORMAT = {
     # OpenRouter 标准格式，只使用 content 字段

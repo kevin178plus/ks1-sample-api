@@ -28,6 +28,9 @@ HTTP_PROXY = "http://127.0.0.1:7897"  # 代理地址
 # SDK 配置
 USE_SDK = True  # 使用 OpenAI SDK 格式
 
+# 请求参数默认值
+MAX_TOKENS = 2000  # 最大生成token数
+
 
 def get_model_weights(models=None):
     """
