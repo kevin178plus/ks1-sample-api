@@ -31,6 +31,9 @@ USE_SDK = True  # 使用 OpenAI SDK 格式
 # 请求参数默认值
 MAX_TOKENS = 2000  # 最大生成token数
 
+# 默认权重（越高被选中概率越大）
+DEFAULT_WEIGHT = 10
+
 
 def get_model_weights(models=None):
     """

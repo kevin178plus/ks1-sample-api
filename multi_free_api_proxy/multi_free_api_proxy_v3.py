@@ -287,13 +287,14 @@ HTTP_PROXY = os.getenv("HTTP_PROXY")
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
 
 def init_default_weights():
-    """初始化默认权重（所有API默认权重为10）"""
+    """初始化默认权重（从各free的config.py读取DEFAULT_WEIGHT）"""
     global API_WEIGHTS, FREE_APIS
     
     API_WEIGHTS.clear()
     for api_name in FREE_APIS:
-        # 默认权重为 10
-        API_WEIGHTS[api_name] = 10
+        # 从 FREE_APIS 中读取 default_weight，默认值为 10
+        default_weight = FREE_APIS[api_name].get("default_weight", 10)
+        API_WEIGHTS[api_name] = default_weight
     
     print(f"[权重] 默认权重已初始化: {API_WEIGHTS}")
 
@@ -444,6 +445,7 @@ def load_api_configs():
             use_sdk = getattr(config_module, "USE_SDK", False)
             available_models = getattr(config_module, "AVAILABLE_MODELS", [])
             max_tokens = getattr(config_module, "MAX_TOKENS", proxy_config.DEFAULT_MAX_TOKENS)
+            default_weight = getattr(config_module, "DEFAULT_WEIGHT", 10)  # 默认权重
             response_format = getattr(config_module, "RESPONSE_FORMAT", {
                 "content_fields": ["content"],
                 "merge_fields": False,
@@ -475,6 +477,7 @@ def load_api_configs():
                 "model": model_name,
                 "available_models": available_models,
                 "max_tokens": max_tokens,  # 从各 free 的 config.py 读取
+                "default_weight": default_weight,  # 从各 free 的 config.py 读取
                 "use_proxy": use_proxy,
                 "response_format": response_format,
                 "available": False,
@@ -1834,13 +1837,13 @@ def debug_page():
             <div id="chat-tab" class="tab-content">
                 <h2>💬 AI 聊天测试</h2>
                 <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 5px; font-size: 13px; color: #666;">
-                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认{proxy_config.DEFAULT_MAX_TOKENS}。
+                    <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认2000。
                 </div>
                 <div style="margin-bottom: 10px;">
                     <label for="maxTokensInput" style="font-weight: bold; color: #333;">Max Tokens:</label>
-                    <input type="number" id="maxTokensInput" value="{proxy_config.DEFAULT_MAX_TOKENS}" min="100" max="4000" step="100" 
+                    <input type="number" id="maxTokensInput" value="2000" min="100" max="4000" step="100" 
                            style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 100px; margin-left: 10px;">
-                    <span style="color: #666; font-size: 12px;">(默认: {proxy_config.DEFAULT_MAX_TOKENS}, 范围: 100-4000)</span>
+                    <span style="color: #666; font-size: 12px;">(默认: 2000, 范围: 100-4000)</span>
                 </div>
                 <div class="chat-container">
                     <div class="chat-messages" id="chatMessages"></div>
@@ -1886,8 +1889,8 @@ def debug_page():
         
         <script>
             // 从服务器获取的默认配置
-            const DEFAULT_MAX_TOKENS = {proxy_config.DEFAULT_MAX_TOKENS};
-            const DEFAULT_TEMPERATURE = {proxy_config.DEFAULT_TEMPERATURE};
+            const DEFAULT_MAX_TOKENS = 2000;
+            const DEFAULT_TEMPERATURE = 0.7;
 
             function showTab(tabName) {
                 document.querySelectorAll('.tab-content').forEach(content => {
