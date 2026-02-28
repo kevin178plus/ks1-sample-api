@@ -37,6 +37,10 @@ python --version
 pip install flask requests
 ```
 
+**注意：**
+- Python 3.13+ 需要使用 watchdog 6.0.0 或更高版本
+- 如果使用文件监控功能，请安装并确保版本：`pip install --upgrade watchdog`
+
 ### 2. 配置环境
 ```bash
 # 创建.env文件

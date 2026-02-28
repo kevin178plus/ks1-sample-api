@@ -469,6 +469,10 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple flask requests watchdog
 # 使用 pip install xxx.whl 安装
 ```
 
+**注意：**
+- Python 3.13+ 需要使用 watchdog 6.0.0 或更高版本
+- 如果遇到线程错误，请升级：`pip install --upgrade watchdog`
+
 ## 📝 维护建议
 
 ### 日常维护
@@ -482,6 +486,7 @@ pip install -i https://pypi.tuna.tsinghua.edu.cn/simple flask requests watchdog
 
 3. **更新依赖**
    - 定期检查依赖更新
+   - Python 3.13+ 用户确保 watchdog 版本 >= 6.0.0
    - 测试新版本兼容性
 
 4. **备份配置**

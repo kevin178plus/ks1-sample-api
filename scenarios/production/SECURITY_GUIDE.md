@@ -22,7 +22,13 @@
 ```bash
 # 1. 安装依赖
 pip install flask requests watchdog
+```
 
+**注意：**
+- Python 3.13+ 需要使用 watchdog 6.0.0 或更高版本
+- 如果遇到线程错误，请升级：`pip install --upgrade watchdog`
+
+```bash
 # 2. 创建生产环境配置文件
 cp env.production.example .env.production
 ```

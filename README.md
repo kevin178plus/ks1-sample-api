@@ -28,6 +28,10 @@
 pip install flask requests watchdog
 ```
 
+**注意：**
+- Python 3.13+ 需要使用 watchdog 6.0.0 或更高版本
+- 如果遇到线程错误，请升级：`pip install --upgrade watchdog`
+
 ### 2. 配置 .env
 
 ```bash
@@ -232,6 +236,17 @@ python daemon.py restart  # 重启守护进程
 
 - OpenRouter 的免费模型会定期变化
 - 检查 [OpenRouter 官网](https://openrouter.ai) 了解当前可用的免费模型
+
+### Python 3.13 线程错误 (TypeError: 'handle' must be a _ThreadHandle)
+
+**问题原因：** Python 3.13 修改了 threading 模块的 API，旧版本的 watchdog (4.0.0) 不兼容
+
+**解决方案：**
+```bash
+pip install --upgrade watchdog
+```
+
+需要升级到 watchdog 6.0.0 或更高版本。
 
 ## 📝 许可证
 

@@ -92,5 +92,31 @@
 
 ---
 
-*最后更新：2026-02-23 20:02:02*
-*历史记录已拆分到 logs/operateLog-by-ymd/ 目录*
+## 2026-02-28 - 修复 Python 3.13 兼容性问题
+**更新时间：** 2026-02-28
+
+### 问题描述
+启动 `multi_free_api_proxy_v3.py` 时出现以下错误：
+```
+TypeError: 'handle' must be a _ThreadHandle
+```
+
+### 根本原因
+Python 3.13 修改了 threading 模块的 API，导致旧版本的 watchdog 库 (4.0.0) 不兼容，无法启动文件监控线程。
+
+### 解决方案
+升级 watchdog 到 6.0.0 版本（支持 Python 3.13）：
+```bash
+pip install --upgrade watchdog
+```
+
+**变更记录：**
+- watchdog 从 4.0.0 升级到 6.0.0
+- 程序成功启动，服务运行在 http://127.0.0.1:5000
+
+### 验证结果
+程序已成功启动并正常运行。
+
+---
+
+*最后更新：2026-02-28*
