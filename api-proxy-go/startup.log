@@ -1,0 +1,66 @@
+﻿.\api-proxy.exe : 2026/03/03 13:32:00 [启动] API 代理 v1.0.0
+At line:1 char:1
++ .\api-proxy.exe -config config.yaml 2>&1 | Out-File -FilePath startup ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (2026/03/03 13:32:00 [启动] API 代理 v1.0.0:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+2026/03/03 13:32:00 [配置] 监听地址: :5000
+2026/03/03 13:32:00 [配置] 上游目录: ./upstreams
+2026/03/03 13:32:00 [配置] 调试模式: true
+2026/03/03 13:32:00 [上游] 警告: 没有可用的上游服务
+2026/03/03 13:32:00 [启动] 测试上游服务...
+2026/03/03 13:32:00 [上游] 开始测试 4 个启用的上游服务...
+2026/03/03 13:32:00 [上游] free3: 测试 https://free.v36.cm/v1/chat/completions
+2026/03/03 13:32:00 [启动] 服务器监听 :5000
+2026/03/03 13:32:01 [上游] free3: 测试失败 - 状态码 429
+2026/03/03 13:32:01 [上游] free3: 调用 updateAvailableList
+2026/03/03 13:32:01 [上游] 警告: 没有可用的上游服务
+2026/03/03 13:32:01 [上游] free3: updateAvailableList 完成
+2026/03/03 13:32:01 [上游] free1: 测试 https://openrouter.ai/api/v1/chat/completions
+2026/03/03 13:32:03 [上游] free1: 测试成功 (状态码 200)
+2026/03/03 13:32:03 [上游] free1: 调用 updateAvailableList
+2026/03/03 13:32:03 [上游] 可用上游列表: [free1]
+2026/03/03 13:32:03 [上游] free1: updateAvailableList 完成
+2026/03/03 13:32:03 [上游] free2: 测试 https://api.chatanywhere.tech/v1/chat/completions
+2026/03/03 13:32:09 [上游] free2: 测试成功 (状态码 200)
+2026/03/03 13:32:09 [上游] free2: 调用 updateAvailableList
+2026/03/03 13:32:09 [上游] 可用上游列表: [free1 free2]
+2026/03/03 13:32:09 [上游] free2: updateAvailableList 完成
+2026/03/03 13:32:09 [上游] free4: 测试 https://api.mistral.ai/v1/chat/completions
+2026/03/03 13:32:10 [上游] free4: 测试成功 (状态码 200)
+2026/03/03 13:32:10 [上游] free4: 调用 updateAvailableList
+2026/03/03 13:32:10 [上游] 可用上游列表: [free2 free4 free1]
+2026/03/03 13:32:10 [上游] free4: updateAvailableList 完成
+2026/03/03 13:32:10 [上游] 上游测试完成
+2026/03/03 13:32:10 [启动] 上游服务测试完成
+2026/03/03 13:32:29 [请求] [71828a58] GET /health
+2026/03/03 13:32:29 [响应] [71828a58] GET /health 200 (522.5µs)
+2026/03/03 13:54:07 [请求] [5af4ef5d] POST /v1/chat/completions
+2026/03/03 13:54:12 [响应] [5af4ef5d] POST /v1/chat/completions 200 (4.2799293s)
+2026/03/03 13:54:17 [请求] [649b0651] GET /health
+2026/03/03 13:54:17 [响应] [649b0651] GET /health 200 (109.3µs)
+2026/03/03 13:54:17 [请求] [17fd06c0] GET /health
+2026/03/03 13:54:17 [响应] [17fd06c0] GET /health 200 (524.8µs)
+2026/03/03 13:54:17 [请求] [3e7779c0] GET /health
+2026/03/03 13:54:17 [响应] [3e7779c0] GET /health 200 (0s)
+2026/03/03 13:54:17 [请求] [dc7bf64a] GET /health
+2026/03/03 13:54:17 [响应] [dc7bf64a] GET /health 200 (501.2µs)
+2026/03/03 13:54:18 [请求] [c7ff6371] GET /debug/stats
+2026/03/03 13:54:18 [响应] [c7ff6371] GET /debug/stats 200 (0s)
+2026/03/03 13:54:18 [请求] [10d8372a] GET /debug/apis
+2026/03/03 13:54:18 [响应] [10d8372a] GET /debug/apis 200 (0s)
+2026/03/03 13:54:18 [请求] [6cf28bd5] GET /debug/concurrency
+2026/03/03 13:54:18 [响应] [6cf28bd5] GET /debug/concurrency 200 (0s)
+2026/03/03 13:54:18 [请求] [8c5070c8] POST /v1/chat/completions
+2026/03/03 13:54:19 [响应] [8c5070c8] POST /v1/chat/completions 200 (1.406119s)
+2026/03/03 13:54:19 [请求] [1e358750] GET /invalid
+2026/03/03 13:54:19 [响应] [1e358750] GET /invalid 404 (516.9µs)
+2026/03/03 13:54:19 [请求] [085effe9] POST /health
+2026/03/03 13:54:19 [响应] [085effe9] POST /health 405 (85.6µs)
+2026/03/03 14:08:48 [请求] [10f52e6f] GET /debug
+2026/03/03 14:08:48 [响应] [10f52e6f] GET /debug 200 (522.6µs)
+2026/03/03 14:08:49 [请求] [aa2cd82f] GET /debug/stats
+2026/03/03 14:08:49 [响应] [aa2cd82f] GET /debug/stats 200 (0s)
+2026/03/03 14:08:49 [请求] [23304290] GET /debug/apis
+2026/03/03 14:08:49 [响应] [23304290] GET /debug/apis 200 (0s)

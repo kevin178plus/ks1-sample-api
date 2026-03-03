@@ -348,7 +348,9 @@ def test_api_startup(api_name):
 
     # 使用 HTTP API
     try:
-        url = f"{base_url}/v1/chat/completions"
+        # 使用自定义端点路径，默认为 /v1/chat/completions
+        endpoint = api_config.get("endpoint", "/v1/chat/completions")
+        url = f"{base_url}{endpoint}"
         headers = {
             'Authorization': f'Bearer {api_key}',
             'Content-Type': 'application/json'
@@ -446,6 +448,7 @@ def load_api_configs():
             available_models = getattr(config_module, "AVAILABLE_MODELS", [])
             max_tokens = getattr(config_module, "MAX_TOKENS", proxy_config.DEFAULT_MAX_TOKENS)
             default_weight = getattr(config_module, "DEFAULT_WEIGHT", 10)  # 默认权重
+            endpoint = getattr(config_module, "ENDPOINT", "/v1/chat/completions")  # 自定义端点路径
             response_format = getattr(config_module, "RESPONSE_FORMAT", {
                 "content_fields": ["content"],
                 "merge_fields": False,
@@ -479,6 +482,7 @@ def load_api_configs():
                 "max_tokens": max_tokens,  # 从各 free 的 config.py 读取
                 "default_weight": default_weight,  # 从各 free 的 config.py 读取
                 "use_proxy": use_proxy,
+                "endpoint": endpoint,  # 自定义端点路径
                 "response_format": response_format,
                 "available": False,
                 "last_test_time": None,
@@ -788,7 +792,9 @@ def execute_with_free_api(data, message_id):
 
         # 使用 HTTP API
         try:
-            url = f"{base_url}/v1/chat/completions"
+            # 使用自定义端点路径，默认为 /v1/chat/completions
+            endpoint = api_config.get("endpoint", "/v1/chat/completions")
+            url = f"{base_url}{endpoint}"
             headers = {
                 'Authorization': f'Bearer {api_key}',
                 'Content-Type': 'application/json'

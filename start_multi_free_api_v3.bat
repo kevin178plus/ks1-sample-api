@@ -1,5 +1,4 @@
 @echo off
-setlocal enabledelayedexpansion
 
 title ks1-multi-free-api-v3
 
@@ -10,10 +9,19 @@ echo      多Free API代理服务启动脚本 (V3)
 echo ============================================
 echo.
 
-REM 设置默认端口
-set PORT=5000
+REM 从 .env 文件加载环境变量（包括 PORT）
+if exist .env (
+    for /f "tokens=1,2 delims==" %%a in (.env) do (
+        set %%a=%%b
+    )
+)
 
-REM 检查是否设置了自定义端口
+REM 如果 .env 中没有配置 PORT，使用命令行参数或默认值
+if "%PORT%"=="" (
+    set PORT=5000
+)
+
+REM 检查是否设置了命令行参数（优先级最高）
 if not "%1"=="" (
     set PORT=%1
 )

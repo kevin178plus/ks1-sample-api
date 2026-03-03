@@ -1,0 +1,46 @@
+# API 代理配置文件（从 Python 版本自动迁移）
+
+# 监听地址
+listen: ":5000"
+
+# 上游配置
+upstreams:
+  root_dir: "./upstreams"  # 上游配置根目录
+
+# 认证配置
+auth:
+  enabled: false          # 是否启用认证
+  keys: []                # API Key 白名单，为空则允许所有
+  key_limit: false        # 是否启用按密钥限额统计
+  default_limit: 1000     # 默认限额（调用次数）
+
+# 限流配置
+rate_limit:
+  enabled: false                  # 是否启用限流（测试时关闭）
+  requests_per_second: 100        # 每秒请求数限制（测试时提高）
+
+# 调试配置
+debug:
+  enabled: true             # 是否启用调试模式
+  cache_dir: "r:/api_proxy_cache"  # 缓存目录（从 CACHE_DIR 迁移）
+  traffic_log:
+    enabled: true           # 是否启用流量日志
+    path: "r:/api_proxy_cache/traffic.json"
+    max_size_mb: 100
+    max_backups: 3
+    compress: true
+    buffer_size: 1000
+    record_body: true
+    max_body_bytes: 1024
+
+# 健康检查配置
+health_check:
+  enabled: true             # 是否启用健康检查
+  interval: 12h             # 检查间隔，默认 12 小时
+  timeout: 30s              # 检查超时时间
+  max_failures: 3           # 最大连续失败次数
+
+# 权重配置
+weight:
+  special_threshold: 100    # 特别权重阈值，>100 次必然选中
+  min_auto_decrease: 50     # 自动减少权重的下限

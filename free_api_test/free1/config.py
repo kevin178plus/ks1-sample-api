@@ -11,7 +11,7 @@ USE_SDK = False  # 使用HTTP API
 MAX_TOKENS = 2000  # 最大生成token数
 
 # 默认权重（越高被选中概率越大）
-DEFAULT_WEIGHT = 20
+DEFAULT_WEIGHT = 120
 
 # 响应格式配置
 RESPONSE_FORMAT = {

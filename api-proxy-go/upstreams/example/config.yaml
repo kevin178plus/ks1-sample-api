@@ -1,0 +1,39 @@
+name: "Example API"
+address: "https://api.example.com"
+api_key: "sk-example-key"
+enabled: false
+default_weight: 10
+
+# 限额配置
+limit:
+  hourly: 1000
+  daily: 5000
+  monthly: 100000
+
+# 阈值配置
+thresholds:
+  warning: 80
+  critical: 95
+
+# Webhook 通知（可选）
+# webhook: "http://monitor/alert"
+
+# 代理配置
+use_proxy: false
+use_sdk: false
+
+# 模型配置
+model: "gpt-3.5-turbo"
+available_models:
+  - "gpt-3.5-turbo"
+  - "gpt-4o-mini"
+use_weighted_model: true
+
+# 响应格式配置
+response_format:
+  content_fields: ["content"]
+  merge_fields: false
+  use_reasoning_as_fallback: false
+
+# 最大 token 数
+max_tokens: 2000

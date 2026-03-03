@@ -12,7 +12,7 @@ USE_SDK = True  # 使用iflow SDK
 MAX_TOKENS = 2000  # 最大生成token数
 
 # 默认权重（越高被选中概率越大）
-DEFAULT_WEIGHT = 15
+DEFAULT_WEIGHT = 150
 
 # 响应格式配置
 # iflow SDK 返回的是纯文本，不需要特殊处理
