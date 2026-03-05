@@ -68,6 +68,19 @@ FREE5_API_KEY=your_iflow_api_key  # 可选，free5 使用 iflow SDK
 FREE6_API_KEY=your_csdn_api_key
 ```
 
+**禁用特定 API 服务**:
+如果想禁用某个 API 服务，只需在 `.env` 文件中注释掉或删除对应的 API_KEY 行即可。系统启动时会自动跳过未配置 API_KEY 的服务。
+
+例如，要禁用 free5：
+```properties
+# FREE5_API_KEY=your_iflow_api_key  # 注释后 free5 将不会被加载
+```
+
+**注意**:
+- 系统会检查 `.env` 文件中是否配置了对应的 API_KEY 环境变量
+- 如果某个 API 的 API_KEY 未配置，即使 `free_api_test/` 目录下有对应的配置文件，该 API 也不会被加载
+- 这样可以方便地临时禁用某些 API 服务，而不需要删除或重命名配置文件
+
 ### Free API配置
 
 Free API的配置存储在`free_api_test`目录下的各个子目录中,如`free1`、`free2`、`free3`等。每个子目录应包含:
@@ -107,15 +120,18 @@ USE_SDK = False  # 是否使用SDK
 服务启动时会自动:
 1. 扫描`free_api_test`目录下的所有`free*`子目录
 2. 读取每个子目录的`config.py`文件
-3. 提取配置信息并构建API配置字典
-4. 测试每个API是否可用
-5. 将可用的API加入服务队列
+3. **检查 `.env` 文件中是否配置了对应的 API_KEY 环境变量**
+4. 如果 API_KEY 已配置，则提取配置信息并构建API配置字典
+5. 如果 API_KEY 未配置，则跳过该 API（并在日志中显示跳过原因）
+6. 测试每个已配置的API是否可用
+7. 将可用的API加入服务队列
 
 **优势**:
 - 无需修改代码即可添加新API
 - 配置集中管理,易于维护
 - 支持动态加载和卸载API
 - 配置格式统一,易于理解
+- **可以通过注释 `.env` 中的 API_KEY 来方便地禁用特定服务**
 
 #### test_api.py 文件
 

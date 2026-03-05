@@ -266,7 +266,10 @@ def load_env():
         with open(env_file, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
-                if line and "=" in line:
+                # 跳过空行和注释行（以 # 开头）
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
                     key, value = line.split("=", 1)
                     os.environ[key.strip()] = value.strip()
 
@@ -461,6 +464,16 @@ def load_api_configs():
             if not base_url or not model_name:
                 print(f"[跳过] {api_name}: 配置不完整 (缺少 base_url 或 model_name)")
                 continue
+
+            # 检查环境变量中是否配置了对应的 API_KEY
+            env_key = f"{api_name.upper()}_API_KEY"
+            env_api_key = os.getenv(env_key)
+            if not env_api_key:
+                print(f"[跳过] {api_name}: 环境变量 {env_key} 未配置（已在 .env 中注释或删除）")
+                continue
+
+            # 使用环境变量中的 API_KEY 覆盖 config.py 中的值
+            api_key = env_api_key
 
             # API_KEY 可以为空，但在实际调用时会失败
             if not api_key:
