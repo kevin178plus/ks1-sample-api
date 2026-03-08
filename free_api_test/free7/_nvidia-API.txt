@@ -1,1 +1,27 @@
 -- 22:52 2026/2/20
+
+-- 19:43 2026/3/7
+
+from openai import OpenAI
+
+client = OpenAI(
+  base_url = "https://integrate.api.nvidia.com/v1",
+  api_key = "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"
+)
+
+completion = client.chat.completions.create(
+  model="minimaxai/minimax-m2.5",
+  messages=[{"role":"user","content":""}],
+  temperature=1,
+  top_p=0.95,
+  max_tokens=8192,
+  stream=True
+)
+
+for chunk in completion:
+  if not getattr(chunk, "choices", None):
+    continue
+  if chunk.choices[0].delta.content is not None:
+    print(chunk.choices[0].delta.content, end="")
+  
+

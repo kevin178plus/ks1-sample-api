@@ -165,7 +165,6 @@ curl http://localhost:5000/health
 3. **集成测试**
    - [ ] 与 Python 版本对比测试
    - [ ] 配置热加载测试
-   - [ ] Windows 服务部署测试
 
 ---
 

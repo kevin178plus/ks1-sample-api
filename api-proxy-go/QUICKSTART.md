@@ -114,14 +114,6 @@ curl http://localhost:5000/debug/stats
 curl http://localhost:5000/debug/apis
 ```
 
-### Q: 如何部署为 Windows 服务？
-
-A: 使用 nssm：
-```bash
-nssm install API-Proxy "D:\path\to\api-proxy.exe" -config "D:\path\to\config.yaml"
-nssm start API-Proxy
-```
-
 ### Q: 如何优雅重启？
 
 A: 修改 `config.yaml` 后，服务会自动检测并优雅重启（< 3秒）。

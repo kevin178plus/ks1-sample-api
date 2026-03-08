@@ -4,6 +4,38 @@
 
 多Free API代理服务是一个能够自动检测、测试和轮换使用多个Free API的代理服务。它会自动检测`free_api_test`目录下的所有Free API(如free2、free3等),并在启动时测试这些API是否可用。如果API可用,则将其加入服务队列,收到请求时轮换使用这些可用的free API。
 
+## 架构设计
+
+本项目采用**模块化架构**，将特殊 API 以独立服务运行，主服务保持轻量级：
+
+### 服务架构
+```
+┌─────────────────────────────────────────┐
+│   主服务 (端口 5000)                     │
+│   - 管理普通 API (free1-free4, free6-9) │
+│   - 路由特殊 API 到独立服务              │
+│   - 统一的 OpenAI API 接口               │
+└─────────────┬───────────────────────────┘
+              │
+              ├──────────────┬──────────────┐
+              │              │              │
+         ┌────▼────┐   ┌────▼────┐   ┌────▼────┐
+         │ free5   │   │ free8   │   │  其他   │
+         │ (5005)  │   │ (5008)  │   │  API    │
+         │ 独立服务│   │ 独立服务│   │  直接调用│
+         └─────────┘   └─────────┘   └─────────┘
+```
+
+### 独立服务
+- **free5 (端口 5005)**: iflow SDK 服务，提供异步查询能力
+- **free8 (端口 5008)**: Friendli.ai 服务，支持权重模型选择
+
+### 优势
+- ✅ **轻量级**: 主服务不需要安装特殊依赖（如 iflow-sdk）
+- ✅ **故障隔离**: 独立服务崩溃不影响主服务
+- ✅ **易于维护**: 每个服务职责清晰，代码独立
+- ✅ **灵活扩展**: 新增特殊 API 只需添加独立服务
+
 ## 功能特性
 
 1. **自动检测**: 自动检测`free_api_test`目录下的所有Free API
@@ -15,7 +47,7 @@
 7. **调试模式**: 支持调试模式,记录请求和响应，提供Web调试面板
 8. **健康检查**: 提供健康检查端点
 9. **自动模型选择**: 忽略原始请求中的model参数,自动使用每个API支持的第一个模型
-10. **SDK 支持**: 支持使用 SDK 调用 API (如 free5 使用 iflow SDK)
+10. **独立服务支持**: 特殊 API（如 free5、free8）以独立服务运行
 11. **统一接口**: 所有 API 提供统一的 OpenAI 兼容接口
 12. **灵活的响应格式处理**: 支持不同 API 返回不同格式的响应
     - 通过 `RESPONSE_FORMAT` 配置定义如何从响应中提取内容
@@ -28,16 +60,23 @@
 
 ### 依赖项
 
+#### 主服务依赖
 - Python 3.7+
 - Flask
 - requests
 - watchdog
-- iflow-sdk (用于 free5)
+
+#### 独立服务依赖（可选）
+- iflow-sdk (仅用于 free5 服务)
 
 ### 安装依赖
 
 ```bash
-pip install flask requests watchdog iflow-sdk
+# 安装主服务依赖
+pip install flask requests watchdog
+
+# 如果需要使用 free5，安装 iflow-sdk
+pip install iflow-sdk
 ```
 
 ## 配置
@@ -113,7 +152,8 @@ USE_SDK = False  # 是否使用SDK
 
 **特殊处理**:
 - `free1`: 强制使用代理(`USE_PROXY = True`)
-- `free5`: 强制使用SDK(`USE_SDK = True`)
+- `free5`: 独立服务运行，主服务通过 HTTP 调用（端口 5005）
+- `free8`: 独立服务运行，支持权重模型选择（端口 5008）
 
 #### 自动发现机制
 
@@ -179,16 +219,47 @@ openai.base_url = "https://api.example.com/v1/"
 
 ### 启动服务
 
+#### 一键启动所有服务（推荐）
+
 Windows:
+```bash
+start_all_services.bat  # 启动主服务 + 所有独立服务
+```
+
+此脚本会自动：
+1. 检查并安装依赖
+2. 启动 free5 独立服务（端口 5005）
+3. 启动 free8 独立服务（端口 5008）
+4. 启动主服务（端口 5000）
+
+#### 分步启动
+
+如果需要单独控制各个服务：
+
+**Windows**:
 ```bash
 start_multi_free_api.bat        # 标准版本
 start_multi_free_api_v3.bat     # V3版本(从.env读取配置)
 ```
 
-Linux/Mac:
+**Linux/Mac**:
 ```bash
 python multi_free_api_proxy.py       # 标准版本
 python multi_free_api_proxy_v3.py    # V3版本
+```
+
+#### 单独启动独立服务
+
+**free5 服务** (需要 iflow-sdk):
+```bash
+cd free_api_test/free5
+python iflow_api_proxy.py
+```
+
+**free8 服务**:
+```bash
+cd free_api_test/free8
+python friendli_service.py
 ```
 
 ### API端点
@@ -232,6 +303,39 @@ curl http://localhost:5000/health
 **请求示例**:
 ```bash
 curl http://localhost:5000/health/upstream
+```
+
+#### 独立服务端点
+
+**free5 服务** (端口 5005):
+```bash
+# 健康检查
+curl http://localhost:5005/health
+
+# 列出模型
+curl http://localhost:5005/v1/models
+
+# 聊天完成
+curl -X POST http://localhost:5005/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+**free8 服务** (端口 5008):
+```bash
+# 健康检查
+curl http://localhost:5008/health
+
+# 列出模型
+curl http://localhost:5008/v1/models
+
+# 统计信息
+curl http://localhost:5008/v1/stats
+
+# 聊天完成
+curl -X POST http://localhost:5008/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello"}]}'
 ```
 
 ## 调试模式
@@ -545,35 +649,30 @@ RESPONSE_FORMAT = {
 
 ### 添加 SDK API
 
-要添加使用 SDK 的 Free API,需要:
+### 添加普通 HTTP API
 
-1. 在`multi_free_api_proxy_v3.py`中导入 SDK
-2. 在`load_api_configs`函数中添加 API 配置,设置`use_sdk: True`
-3. 在`test_api_startup`函数中添加 SDK 测试逻辑
-4. 在`execute_with_free_api`函数中添加 SDK 调用逻辑
+1. 在`free_api_test`目录下创建新的子目录（如 `free10`）
+2. 创建 `config.py` 文件，配置 API 信息
+3. 创建 `test_api.py` 文件，用于测试 API
+4. 在 `.env` 文件中添加对应的 API_KEY
+5. 重启服务，系统会自动加载新 API
 
-示例 (free5 使用 iflow SDK):
+### 添加独立服务（特殊 API）
 
-```python
-# 1. 导入 SDK
-try:
-    from iflow_sdk import query as iflow_query
-    IFLOW_SDK_AVAILABLE = True
-except ImportError:
-    IFLOW_SDK_AVAILABLE = False
+如果新 API 有特殊需求（如需要特殊 SDK、权重模型选择等），建议创建独立服务：
 
-# 2. 添加 API 配置
-"free5": {
-    "name": "free5",
-    "api_key": FREE5_API_KEY,
-    "base_url": "iflow",
-    "model": "iflow",
-    "use_proxy": False,
-    "use_sdk": True  # 标记使用 SDK
-}
+1. 在 `free_api_test/freeN/` 目录下创建独立服务文件
+2. 提供标准的 OpenAI API 兼容接口（`/v1/chat/completions`, `/v1/models`, `/health`）
+3. 使用独立端口（建议 5000 + N）
+4. 在主服务的 `execute_with_free_api` 函数中添加路由逻辑
+5. 在 `test_api_startup` 函数中添加独立服务测试逻辑
+6. 更新启动脚本 `start_all_services.bat`
 
-# 3. 在 execute_with_free_api 中处理 SDK 调用
-if use_sdk:
+**优势**：
+- 不影响主服务的轻量级特性
+- 故障隔离，不影响其他服务
+- 可以独立测试和调试
+- 便于维护和升级
     # 使用 SDK 调用
     response_text = loop.run_until_complete(iflow_query(user_message))
     # 构建 OpenAI 兼容响应
@@ -671,6 +770,51 @@ if use_sdk:
   - 实际内容在 `reasoning_content` 字段中（这是模型的思考过程）
   - 已配置 RESPONSE_FORMAT 来正确处理这种情况
   - 建议根据问题复杂度调整 max_tokens 参数（简单问题 1024-2048，复杂问题 4096-8192）
+
+## 常见问题
+
+### Q: 为什么有些 API 以独立服务运行？
+
+A: 为了保持主服务的轻量级和稳定性。特殊 API（如 free5 需要 iflow-sdk、free8 需要权重模型选择）以独立服务运行，有以下优势：
+- 主服务不需要安装特殊依赖
+- 独立服务崩溃不影响主服务
+- 可以独立测试和调试
+- 便于维护和升级
+
+### Q: 如何只启动主服务，不启动独立服务？
+
+A: 直接运行主服务即可：
+```bash
+cd multi_free_api_proxy
+python multi_free_api_proxy_v3.py
+```
+注意：如果未启动独立服务，主服务会自动跳过 free5 和 free8。
+
+### Q: 独立服务启动失败怎么办？
+
+A: 检查以下几点：
+1. 端口是否被占用（5005 和 5008）
+2. 依赖是否安装（free5 需要 iflow-sdk）
+3. `.env` 文件中是否配置了对应的 API_KEY
+4. 查看独立服务的错误日志
+
+### Q: 如何禁用某个独立服务？
+
+A: 在 `.env` 文件中注释掉对应的 API_KEY：
+```properties
+# FREE5_API_KEY=your_iflow_api_key  # 注释后 free5 将不会被加载
+# FREE8_API_KEY=your_friendli_token  # 注释后 free8 将不会被加载
+```
+
+### Q: 主服务和独立服务如何通信？
+
+A: 主服务通过 HTTP 调用独立服务的标准 OpenAI API 接口：
+- free5: http://localhost:5005/v1/chat/completions
+- free8: http://localhost:5008/v1/chat/completions
+
+### Q: 可以修改独立服务的端口吗？
+
+A: 可以。修改对应服务文件中的 `PORT` 变量，并更新主服务中的路由逻辑。
 
 ## 许可证
 

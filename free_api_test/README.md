@@ -88,6 +88,19 @@ FREE5_API_KEY=your_iflow_api_key  # Optional
 FREE6_API_KEY=your_csdn_api_key
 ```
 
+**Disabling Specific Services**:
+To disable a specific API service, simply comment out or delete the corresponding API_KEY line in the `.env` file. The system will automatically skip services without configured API keys.
+
+For example, to disable free5:
+```properties
+# FREE5_API_KEY=your_iflow_api_key  # Commented out - free5 will not be loaded
+```
+
+**Note**:
+- The system checks if the corresponding API_KEY environment variable is configured in `.env`
+- If an API's API_KEY is not configured, even if the configuration file exists in `free_api_test/` directory, that API will not be loaded
+- This allows you to easily temporarily disable certain API services without deleting or renaming configuration files
+
 ## Usage
 
 ### Running Individual Tests
@@ -108,6 +121,7 @@ python test_api.py
 
 cd ../free5
 python iflow_test.py
+# 或启动独立服务：python iflow_api_proxy.py
 
 cd ../free6
 python test_api.py
@@ -117,6 +131,7 @@ python test_api.py
 
 cd ../free8
 python test_api.py
+# 或启动独立服务：python friendli_service.py
 ```
 
 ### Using Multi API Proxy
@@ -132,10 +147,27 @@ See [multi_free_api_proxy/MULTI_FREE_API_README.md](../multi_free_api_proxy/MULT
 
 ## Multi API Proxy Integration
 
-All free APIs (free1-free6) can be used through the multi_free_api_proxy service, which:
+All free APIs (free1-free9) can be used through the multi_free_api_proxy service, which:
 - Automatically detects and tests all available APIs
 - Rotates between APIs for load balancing
 - Handles API failures and retries
 - Provides unified OpenAI-compatible interface
+- **Routes special APIs (free5, free8) to independent services**
+
+### Architecture
+
+```
+主服务 (端口 5000)
+  ├── free1-free4, free6-free9: 直接调用
+  ├── free5: 路由到独立服务 (端口 5005)
+  └── free8: 路由到独立服务 (端口 5008)
+```
+
+### Starting All Services
+
+To start all services (main + independent):
+```bash
+start_all_services.bat  # Windows
+```
 
 For more details, see the [multi_free_api_proxy documentation](../multi_free_api_proxy/).

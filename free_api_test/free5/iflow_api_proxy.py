@@ -342,14 +342,30 @@ def debug_stats():
         "last_error": last_error
     })
 
+@app.route('/v1/models', methods=['GET'])
+def list_models():
+    """列出可用模型（OpenAI API 兼容）"""
+    return jsonify({
+        "object": "list",
+        "data": [
+            {
+                "id": "iflow-model",
+                "object": "model",
+                "created": int(time.time()),
+                "owned_by": "iflow"
+            }
+        ]
+    })
+
 if __name__ == '__main__':
-    if is_port_in_use(5000):
+    PORT = 5005  # free5 专用端口
+    if is_port_in_use(PORT):
         print("=" * 60)
-        print("错误：端口 5000 已被占用")
+        print(f"错误：端口 {PORT} 已被占用")
         print("=" * 60)
         print("解决方案：")
-        print("1. 查找并停止占用端口的进程：")
-        print("   netstat -ano | findstr :5000")
+        print(f"1. 查找并停止占用端口的进程：")
+        print(f"   netstat -ano | findstr :{PORT}")
         print("   taskkill /PID <进程ID> /F")
         print("=" * 60)
         sys.exit(1)
@@ -357,10 +373,10 @@ if __name__ == '__main__':
     print("=" * 60)
     print("iflow API 代理服务启动中...")
     print("=" * 60)
-    print("监听地址: http://localhost:5000")
-    print("API 端点: http://localhost:5000/v1/chat/completions")
-    print("模型列表: http://localhost:5000/v1/models")
-    print("健康检查: http://localhost:5000/health")
+    print(f"监听地址: http://localhost:{PORT}")
+    print(f"API 端点: http://localhost:{PORT}/v1/chat/completions")
+    print(f"模型列表: http://localhost:{PORT}/v1/models")
+    print(f"健康检查: http://localhost:{PORT}/health")
     print("\n[监控] 启动文件监控...")
     print(f"[监控] 监控文件: {', '.join(WATCHED_FILES)}")
     print("[监控] 文件变化时将自动重新加载配置")
@@ -383,7 +399,7 @@ if __name__ == '__main__':
     observer = start_file_watcher()
 
     try:
-        app.run(host='localhost', port=5000, debug=False, use_reloader=False)
+        app.run(host='localhost', port=PORT, debug=False, use_reloader=False)
     except KeyboardInterrupt:
         print("\n[关闭] 正在关闭服务...")
     except Exception as e:

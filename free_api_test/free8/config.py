@@ -1,10 +1,8 @@
 # API配置
 # Friendli.ai API 配置
-# 需要设置环境变量: FRIENDLI_TOKEN 和 FRIENDLI_TEAM_ID
 import os
 
-API_KEY = os.getenv("FRIENDLI_TOKEN")
-TEAM_ID = os.getenv("FRIENDLI_TEAM_ID")
+API_KEY = os.getenv("FREE8_API_KEY")
 BASE_URL = "https://api.friendli.ai/serverless/v1"
 
 # 可用模型列表（按优先级排序）
@@ -26,13 +24,23 @@ USE_PROXY = False  # 是否使用代理
 HTTP_PROXY = "http://127.0.0.1:7897"  # 代理地址
 
 # SDK 配置
-USE_SDK = True  # 使用 OpenAI SDK 格式
+USE_SDK = False  # 使用 OpenAI SDK 格式
+
+# 模型选择配置
+USE_WEIGHTED_MODEL = True  # 是否使用权重随机选择模型（从 AVAILABLE_MODELS 中选择）
 
 # 请求参数默认值
 MAX_TOKENS = 2000  # 最大生成token数
 
 # 默认权重（越高被选中概率越大）
 DEFAULT_WEIGHT = 10
+
+# 响应格式配置
+RESPONSE_FORMAT = {
+    "content_fields": ["content"],
+    "merge_fields": False,
+    "use_reasoning_as_fallback": False
+}
 
 
 def get_model_weights(models=None):

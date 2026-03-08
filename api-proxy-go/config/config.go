@@ -115,7 +115,7 @@ func DiscoverUpstreams(rootDir string) (map[string]*UpstreamConfig, error) {
 			// 目录不存在，返回空 map
 			return upstreams, nil
 		}
-		return nil, fmt.Errorf("读取上游目录失败: %w", err)
+		return nil, fmt.Errorf("读取上游目录失败：%w", err)
 	}
 
 	for _, entry := range entries {

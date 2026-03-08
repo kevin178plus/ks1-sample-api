@@ -19,7 +19,7 @@ if not exist "api-proxy.exe" (
 )
 
 REM Run the service
-echo Starting service on port 5000...
+echo Starting service 
 .\api-proxy.exe -config config.yaml
 
 pause

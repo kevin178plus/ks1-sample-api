@@ -7,12 +7,12 @@ load_dotenv()
 
 API_KEY = os.getenv("FREE7_API_KEY")
 BASE_URL = "https://integrate.api.nvidia.com/"
-MODEL_NAME = "z-ai/glm4.7"
+MODEL_NAME = "minimaxai/minimax-m2.5"
 USE_PROXY = False  # 不使用代理
 USE_SDK = False  # 使用HTTP API
 
 # 请求参数默认值
-MAX_TOKENS = 2000  # 最大生成token数
+MAX_TOKENS = 8192  # 最大生成token数
 
 # 默认权重（越高被选中概率越大）
 DEFAULT_WEIGHT = 10

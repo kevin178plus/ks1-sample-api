@@ -1,7 +1,7 @@
 name: "free5"
-address: "http://localhost:5000"
-api_key: "test-key"
-enabled: false
+address: "https://aigw-gzgy2.cucloud.cn:8443"  # 注意：这里不添加 /v1
+api_key: "sk-sp-sVYnCcYWowtdBDVw5nXnGz9sdOm2IXFS"  # 请替换为您的 Coding Plan 专属 API Key
+enabled: true
 default_weight: 150
 
 # 限额配置（根据实际情况调整）
@@ -17,11 +17,12 @@ thresholds:
 
 # 代理配置
 use_proxy: false
-use_sdk: true
+use_sdk: false
 
 # 模型配置
-model: "iflow"
-available_models: []
+model: "unicom-cloud/MiniMax-M2.5"
+available_models:
+  - "unicom-cloud/MiniMax-M2.5"
 use_weighted_model: false
 
 # 响应格式配置

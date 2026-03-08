@@ -3,6 +3,13 @@
 ## 简介
 friendli.ai 是一家提供高性能大语言模型服务的 AI 公司，其 API 兼容 OpenAI SDK 格式。
 
+## 架构说明
+free8 以**独立服务**形式运行，提供权重模型选择功能：
+- **服务端口**: 5008
+- **服务文件**: `friendli_service.py`
+- **主服务路由**: 通过主服务自动路由到独立服务
+- **直接访问**: 也可以直接调用独立服务的 API
+
 ## API 信息
 - Base URL: `https://api.friendli.ai/serverless/v1`
 - 认证方式: Bearer Token
@@ -10,30 +17,27 @@ friendli.ai 是一家提供高性能大语言模型服务的 AI 公司，其 API
 ## 可用模型
 | 模型名称 | 默认权重 | 说明 |
 |---------|---------|------|
-| meta-llama/Llama-3.3-70B-Instruct | 5 (38.5%) | 新增：Meta 大模型 |
-| Qwen/Qwen3-235B-A22B-Instruct-2507 | 4 (30.8%) | 新增：阿里 Qwen3 大模型 |
-| MiniMaxAI/MiniMax-M2.5 | 3 (23.1%) | 默认首选模型 |
-| zai-org/GLM-4.7 | 2 (15.4%) | 备选模型 |
-| zai-org/GLM-5 | 1 (7.7%) | 备选模型 |
+| Qwen/Qwen3-235B-A22B-Instruct-2507 | 4 (40%) | 默认首选模型 |
+| MiniMaxAI/MiniMax-M2.5 | 3 (30%) | 备选模型 |
+| zai-org/GLM-4.7 | 2 (20%) | 备选模型 |
+| zai-org/GLM-5 | 1 (10%) | 备选模型 |
 
-**权重说明**: 
-- 5个模型的权重比例为 5:4:3:2:1
-- 在15次访问中，预期分布约为：第1个5次，第2个4次，第3个3次，第4个2次，第5个1次
+**权重说明**:
+- 4个模型的权重比例为 4:3:2:1
+- 独立服务会自动按权重随机选择模型
 - 可通过 `config.py` 中的 `AVAILABLE_MODELS` 列表调整模型顺序和数量
 
 ## API Key
-需要设置环境变量：
-- `FRIENDLI_TOKEN`: API 认证令牌
-- `FRIENDLI_TEAM_ID`: 团队 ID（可选）
+需要设置环境变量（在 `.env` 文件中）：
+- `FREE8_API_KEY`: API 认证令牌（用于独立服务）
 
 ## 文件说明
 
 | 文件 | 说明 |
 |-----|------|
 | `config.py` | 配置文件，包含模型列表、权重分配函数 |
-| `test_api.py` | API 测试脚本，支持分权制模型选择 |
-| `test_api_proxy.py` | 代理测试脚本，强制使用代理访问 |
-| `local_api_proxy.py` | 本地 API 代理服务（待修改） |
+| `friendli_service.py` | 独立服务，提供权重模型选择功能（端口 5008） |
+| `test_api.py` | API 测试脚本，支持权重模型选择 |
 
 ## 使用示例
 
@@ -96,14 +100,60 @@ print(f"选中的模型: {model}")
 # 进入目录
 cd free_api_test/free8
 
-# 运行直接访问测试
-python test_api.py
+# 启动独立服务
+python friendli_service.py
 
-# 运行代理测试
-python test_api_proxy.py
+# 在另一个终端运行测试
+python test_api.py
 
 # 测试权重分配
 python config.py
+```
+
+## 独立服务端点
+
+启动独立服务后，可以访问以下端点：
+
+```bash
+# 健康检查
+curl http://localhost:5008/health
+
+# 列出模型
+curl http://localhost:5008/v1/models
+
+# 统计信息
+curl http://localhost:5008/v1/stats
+
+# 聊天完成（自动权重选择）
+curl -X POST http://localhost:5008/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello"}]}'
+```
+
+## 调试信息
+
+独立服务的响应中包含 `_debug` 字段，显示：
+- 选中的模型
+- 权重分布
+- 时间戳
+
+示例：
+```json
+{
+  "id": "chatcmpl-xxx",
+  "choices": [...],
+  "_debug": {
+    "selected_model": "Qwen/Qwen3-235B-A22B-Instruct-2507",
+    "weight_distribution": {
+      "Qwen/Qwen3-235B-A22B-Instruct-2507": 4,
+      "MiniMaxAI/MiniMax-M2.5": 3,
+      "zai-org/GLM-4.7": 2,
+      "zai-org/GLM-5": 1
+    },
+    "timestamp": "2026-03-05T10:30:00"
+  }
+}
+```
 ```
 
 ## 注意事项

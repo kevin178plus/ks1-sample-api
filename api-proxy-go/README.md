@@ -40,7 +40,6 @@
 | API Key 白名单 | 无 | 有 | Go 版本支持白名单验证 |
 | 按 API Key 统计 | 无 | 有 | Go 版本支持按密钥限额统计 |
 | 多模型权重 | 有 | 有 | 功能相同 |
-| Windows 服务 | 支持 | 支持 | Go 版本提供简化支持 |
 
 ## 🏗️ 架构设计
 
@@ -240,7 +239,6 @@ webhook: "http://monitor/alert"
 
 # 代理配置
 use_proxy: false
-use_sdk: false
 
 # 模型配置
 model: "gpt-3.5-turbo"
@@ -318,42 +316,7 @@ debug:
 
 ## 📦 部署指南
 
-### Windows 服务部署
-
-#### 方式 1：使用 nssm
-
-```bash
-# 安装 nssm
-# 下载地址：https://nssm.cc/download
-
-# 安装服务
-nssm install API-Proxy "D:\path\to\api-proxy.exe" -config "D:\path\to\config.yaml"
-
-# 启动服务
-nssm start API-Proxy
-
-# 停止服务
-nssm stop API-Proxy
-
-# 卸载服务
-nssm remove API-Proxy
-```
-
-#### 方式 2：使用 sc
-
-```bash
-# 创建服务
-sc create API-Proxy binPath= "D:\path\to\api-proxy.exe -config D:\path\to\config.yaml" start= auto
-
-# 启动服务
-sc start API-Proxy
-
-# 停止服务
-sc stop API-Proxy
-
-# 删除服务
-sc delete API-Proxy
-```
+> **注意**: Go 版本不提供 Windows 服务支持。如需后台运行，请使用任务计划程序或第三方工具（如 NSSM）。
 
 ### 防火墙配置
 
@@ -437,9 +400,15 @@ curl http://localhost:5000/debug/apis
 2. 确认配置文件语法正确
 3. 查看日志输出
 
-## 📝 开发计划
+## 📝 功能说明
 
-- [ ] 完善 Windows 服务支持
+### 不支持的功能
+
+- ❌ **SDK 模式** - Go 版本不开发 SDK 模式，仅支持 HTTP 代理模式
+- ❌ **Windows 服务支持** - Go 版本不提供原生 Windows 服务支持，建议使用任务计划程序或 NSSM 等第三方工具
+
+### 未来计划
+
 - [ ] 添加 Prometheus 指标
 - [ ] 添加更多测试用例
 - [ ] 优化流量日志性能
