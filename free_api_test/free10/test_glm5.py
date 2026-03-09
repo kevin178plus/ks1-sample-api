@@ -1,9 +1,15 @@
 """
-free10 - AIML API 测试脚本（使用联通云贵阳基地二区 API）
+free10_glm5 - 联通云贵阳基地二区 GLM-5 API 测试脚本
 """
 import os
 import requests
-from config import BASE_URL, API_KEY, MODEL, DEFAULT_TEMPERATURE, DEFAULT_MAX_TOKENS, TIMEOUT
+
+BASE_URL = "https://aigw-gzgy2.cucloud.cn:8443"
+API_KEY = os.getenv("FREE10_API_KEY")
+MODEL = "glm-5"
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_MAX_TOKENS = 8000
+TIMEOUT = 30
 
 
 def read_prompt():
@@ -15,15 +21,14 @@ def read_prompt():
             return f.read().strip()
     except FileNotFoundError:
         print("⚠ 警告：未找到 ask.txt 文件，使用默认提示词")
-        return "Tell me about San Francisco"
+        return "介绍一下 glm-5 模型的特点"
     except Exception as e:
         print(f"⚠ 警告：读取 ask.txt 失败：{e}，使用默认提示词")
-        return "Tell me about San Francisco"
+        return "介绍一下 glm-5 模型的特点"
 
 
 def test_api():
-    """测试 AIML API"""
-    # 读取测试提示词
+    """测试 GLM-5 API"""
     prompt = read_prompt()
     
     url = f"{BASE_URL}/v1/chat/completions"
@@ -72,14 +77,12 @@ def test_api():
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("free10 - AIML API 测试（联通云贵阳基地二区）")
+    print("free10_glm5 - GLM-5 API 测试（联通云贵阳基地二区）")
     print("=" * 60)
     print()
     
-    # 检查 API Key 配置
     if not API_KEY or API_KEY == "<YOUR_AIMLAPI_KEY>":
-        print("⚠  警告：请先在 config.py 中配置有效的 API_KEY")
+        print("⚠  警告：请先在 .env 文件中配置有效的 FREE10_API_KEY")
         print()
     
-    # 运行测试
     test_api()
