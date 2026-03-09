@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>多Free API代理调试面板</title>
+    <link rel="stylesheet" href="/static/css/debug.css">
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 多Free API代理调试面板</h1>
+        
+        <div class="tabs">
+            <div class="tab active" onclick="showTab('stats')">统计信息</div>
+            <div class="tab" onclick="showTab('apis')">API状态</div>
+            <div class="tab" onclick="showTab('chat')">测试聊天</div>
+            <div class="tab" onclick="showTab('manage')">API管理</div>
+        </div>
+        
+        <!-- 统计信息标签页 -->
+        <div id="stats-tab" class="tab-content active">
+            <div class="auto-refresh-control">
+                <label>
+                    <input type="checkbox" id="autoRefreshCheckbox" onchange="toggleAutoRefresh()">
+                    启用自动刷新
+                </label>
+                <label for="refreshInterval">
+                    刷新间隔(秒):
+                </label>
+                <input type="number" id="refreshInterval" value="30" min="15" max="120" onchange="updateRefreshInterval()">
+                <span class="auto-refresh-status" id="autoRefreshStatus">自动刷新: 已关闭</span>
+            </div>
+            <div class="stats">
+                <div class="stat-item">
+                    <span class="stat-label">总调用次数:</span>
+                    <span class="stat-value" id="totalCount">-</span>
+                    <span> 次</span>
+                </div>
+                <div class="stat-item" style="display: flex; gap: 20px;">
+                    <div>
+                        <span class="stat-label">✅ 成功:</span>
+                        <span class="stat-value" id="successCount" style="color: #28a745;">-</span>
+                        <span> 次</span>
+                    </div>
+                    <div>
+                        <span class="stat-label">❌ 失败:</span>
+                        <span class="stat-value" id="failedCount" style="color: #dc3545;">-</span>
+                        <span> 次</span>
+                    </div>
+                    <div>
+                        <span class="stat-label">⏱️ 超时:</span>
+                        <span class="stat-value" id="timeoutCount" style="color: #ffc107;">-</span>
+                        <span> 次</span>
+                    </div>
+                    <div>
+                        <span class="stat-label">🔄 重试:</span>
+                        <span class="stat-value" id="retryCount" style="color: #17a2b8;">-</span>
+                        <span> 次</span>
+                    </div>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">日期:</span>
+                    <span id="date">-</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">最后更新:</span>
+                    <span id="lastUpdated">-</span>
+                </div>
+                <div class="timestamp" id="refreshTime"></div>
+            </div>
+            
+            <div id="error-status" class="error-status" style="display: none;">
+                <h3>⚠️ 当前状态</h3>
+                <div class="error-item">
+                    <span class="error-label">错误类型:</span>
+                    <span id="errorType" class="error-value">-</span>
+                </div>
+                <div class="error-item">
+                    <span class="error-label">错误信息:</span>
+                    <span id="errorMessage" class="error-value">-</span>
+                </div>
+                <div class="error-item">
+                    <span class="error-label">发生时间:</span>
+                    <span id="errorTime" class="error-value">-</span>
+                </div>
+            </div>
+            
+            <button class="refresh-btn" onclick="refreshStats()">刷新统计</button>
+        </div>
+        
+        <!-- API状态标签页 -->
+        <div id="apis-tab" class="tab-content">
+            <h2>📡 Free API 状态</h2>
+            <div id="apiList"></div>
+            <button class="refresh-btn" onclick="refreshApis()" style="margin-top: 15px;">刷新API状态</button>
+        </div>
+        
+        <!-- 测试聊天标签页 -->
+        <div id="chat-tab" class="tab-content">
+            <h2>💬 AI 聊天测试</h2>
+            <div style="margin-bottom: 15px; padding: 10px; background-color: #f0f8ff; border-radius: 5px; font-size: 13px; color: #666;">
+                <strong>📝 参数说明:</strong> max_tokens 控制AI回复的最大长度,默认2000。
+            </div>
+            <div style="margin-bottom: 10px;">
+                <label for="maxTokensInput" style="font-weight: bold; color: #333;">Max Tokens:</label>
+                <input type="number" id="maxTokensInput" value="2000" min="100" max="4000" step="100" 
+                       style="padding: 5px; border: 1px solid #ddd; border-radius: 4px; width: 100px; margin-left: 10px;">
+                <span style="color: #666; font-size: 12px;">(默认: 2000, 范围: 100-4000)</span>
+            </div>
+            <div class="chat-container">
+                <div class="chat-messages" id="chatMessages"></div>
+                <div class="chat-input">
+                    <input type="text" id="messageInput" placeholder="输入您的问题..." onkeypress="handleKeyPress(event)">
+                    <button id="sendBtn" onclick="sendMessage()">发送</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- API管理标签页 -->
+        <div id="manage-tab" class="tab-content">
+            <h2>⚙️ API 管理</h2>
+            <div style="margin-bottom: 15px; padding: 15px; background-color: #e7f3ff; border-radius: 5px; font-size: 13px;">
+                <strong>📝 说明:</strong> 在此页面可以管理各个 Free API 的权重和启用/停用状态。
+                <ul style="margin: 10px 0 0 0; padding-left: 20px;">
+                    <li>默认权重: <strong>10</strong></li>
+                    <li>权重越高，被选中的概率越大。权重为0时，该API不会被使用。</li>
+                    <li><strong>特别权重(&gt;100):</strong> 设置权重大于100时，下次请求必然选中该API。</li>
+                    <li><strong>自动减少:</strong> 特别权重每次服务成功后自动减1，减到50为止不再减少。</li>
+                </ul>
+            </div>
+            <div style="margin-bottom: 15px;">
+                <button class="btn-reset" onclick="resetWeights()">重置权重为默认值</button>
+                <button class="refresh-btn" onclick="refreshManage()">刷新</button>
+            </div>
+            <table class="api-management-table">
+                <thead>
+                    <tr>
+                        <th>API名称</th>
+                        <th>当前模型</th>
+                        <th>状态</th>
+                        <th>权重</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="manageTableBody">
+                    <tr><td colspan="5">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    
+    <script src="/static/js/debug.js"></script>
+</body>
+</html>

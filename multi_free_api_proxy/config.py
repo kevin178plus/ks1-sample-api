@@ -1,23 +1,67 @@
-# 多Free API代理默认配置
-# 此文件包含所有默认参数配置
-# lastUpdated: 2026-02-23 19:29:43
+"""
+应用配置管理
+"""
+import os
+from pathlib import Path
 
-# 请求参数默认值
-DEFAULT_MAX_TOKENS = 2000  # 最大生成token数
-DEFAULT_TEMPERATURE = 0.7  # 生成随机性 (0.0-2.0)
-DEFAULT_TOP_P = 1.0  # 核采样概率 (0.0-1.0)
-DEFAULT_TOP_LOG_PROBS = 0  # 顶级log概率数量
-DEFAULT_STOP = None  # 停止序列 (str or list)
-DEFAULT_PRESENCE_PENALTY = 0.0  # 存在惩罚 (-2.0 to 2.0)
-DEFAULT_FREQUENCY_PENALTY = 0.0  # 频率惩罚 (-2.0 to 2.0)
-DEFAULT_SEED = None  # 随机种子 (int or None)
+class Config:
+    """基础配置"""
+    # 调试模式
+    DEBUG_MODE = Path('DEBUG_MODE.txt').exists()
+    
+    # 缓存配置
+    CACHE_DIR = os.getenv("CACHE_DIR")
+    
+    # 代理配置
+    HTTP_PROXY = os.getenv("HTTP_PROXY")
+    
+    # 并发配置
+    MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", "5"))
+    
+    # 重试配置
+    MAX_RETRIES = 3
+    TIMEOUT_BASE = 45
+    TIMEOUT_RETRY = 60
+    
+    # API 失败处理
+    MAX_CONSECUTIVE_FAILURES = 3
+    
+    # 权重配置
+    SPECIAL_WEIGHT_THRESHOLD = 100  # 权重大于此值时，下次请求必然选中
+    MIN_AUTO_DECREASE_WEIGHT = 50   # 自动减少权重的下限
+    
+    # 默认参数
+    DEFAULT_MAX_TOKENS = 2000
+    DEFAULT_TEMPERATURE = 0.7
+    DEFAULT_TOP_P = 1.0
+    DEFAULT_TOP_LOG_PROBS = 0
+    DEFAULT_TOP_K = 0
+    DEFAULT_STOP = None
+    DEFAULT_PRESENCE_PENALTY = 0.0
+    DEFAULT_FREQUENCY_PENALTY = 0.0
+    DEFAULT_SEED = None
+    
+    # 服务配置
+    PORT = int(os.getenv("PORT", "5000"))
+    HOST = "0.0.0.0"
+    
+    # 文件监控
+    WATCHED_FILES = {'.env', 'multi_free_api_proxy_v3.py'}
+    
+    # 调用历史
+    CALL_HISTORY_MAXLEN = 10
 
-# 超时配置
-TIMEOUT_BASE = 45  # 基础超时时间（秒）
-TIMEOUT_RETRY = 60  # 重试超时时间（秒）
+class DevelopmentConfig(Config):
+    """开发环境配置"""
+    DEBUG = True
 
-# 重试配置
-MAX_RETRIES = 3  # 最大重试次数
+class ProductionConfig(Config):
+    """生产环境配置"""
+    DEBUG = False
 
-# 并发配置
-MAX_CONCURRENT_REQUESTS = 5  # 最大并发请求数
+def get_config():
+    """获取配置对象"""
+    env = os.getenv("FLASK_ENV", "production")
+    if env == "development":
+        return DevelopmentConfig()
+    return ProductionConfig()
