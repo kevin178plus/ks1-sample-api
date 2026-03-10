@@ -597,6 +597,55 @@ def execute_with_free_api(data, message_id):
 
         api_config = app_state.get_api(api_name)
 
+        # 路由到独立服务（free5 和 free8）
+        if api_name in ["free5", "free8"]:
+            service_port = 5005 if api_name == "free5" else 5008
+            service_url = f"http://localhost:{service_port}/v1/chat/completions"
+
+            try:
+                print(f"[请求] 路由到 {api_name} 独立服务: {service_url}")
+
+                # 检查独立服务是否可用
+                models_url = f"http://localhost:{service_port}/v1/models"
+                models_response = session.get(models_url, timeout=5)
+                if models_response.status_code != 200:
+                    raise Exception(f"{api_name} 独立服务不可用")
+
+                # 发送聊天请求到独立服务
+                current_timeout = config.TIMEOUT_RETRY if attempt > 0 else config.TIMEOUT_BASE
+                response = session.post(
+                    service_url,
+                    json=data,
+                    headers={'Content-Type': 'application/json'},
+                    timeout=current_timeout
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                print(f"[请求] {api_name} 独立服务成功")
+
+                # 标记成功
+                mark_api_success(api_name)
+                used_api_name = api_name
+
+                return result, retry_count, used_api_name
+
+            except Exception as e:
+                last_error = e
+                print(f"[请求] {api_name} 独立服务失败: {str(e)}")
+
+                # 标记失败
+                mark_api_failure(api_name)
+
+                if attempt < config.MAX_RETRIES - 1:
+                    retry_count += 1
+                    wait_time = 2 ** attempt
+                    print(f"[重试] {wait_time}秒后重试...")
+                    time.sleep(wait_time)
+                    continue
+
+                raise last_error
+
         try:
             # 简化的请求执行逻辑
             endpoint = api_config.get("endpoint", "/v1/chat/completions")
