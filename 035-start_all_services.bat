@@ -50,9 +50,9 @@ REM 等待独立服务启动
 echo [等待] 等待独立服务启动...
 timeout /t 3 /nobreak >nul
 
-REM 启动主服务
-echo [3/3] 启动主服务 (端口 5000)...
+REM 启动主服务（优化版）
+echo [3/3] 启动主服务 (端口 5000, 优化版)...
 cd /d %~dp0multi_free_api_proxy
-python multi_free_api_proxy_v3.py
+python multi_free_api_proxy_v3_optimized.py
 
 pause

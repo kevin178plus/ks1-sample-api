@@ -279,19 +279,6 @@ def chat_completions():
             ACTIVE_REQUESTS -= 1
         print(f"[并发] 请求完成 (当前: {ACTIVE_REQUESTS}/{MAX_CONCURRENT_REQUESTS})")
 
-@app.route('/v1/models', methods=['GET'])
-def list_models():
-    """列出可用模型"""
-    return jsonify({
-        "object": "list",
-        "data": [{
-            "id": "iflow",
-            "object": "model",
-            "owned_by": "iflow",
-            "permission": []
-        }]
-    })
-
 @app.route('/health', methods=['GET'])
 def health():
     """健康检查"""
