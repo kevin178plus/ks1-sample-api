@@ -29,8 +29,13 @@ if config_file.exists():
     spec = importlib.util.spec_from_file_location("proxy_config", str(config_file))
     proxy_config = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(proxy_config)
+    # 从 Config 类获取默认值
+    proxy_config_defaults = getattr(proxy_config, 'Config', None)
 else:
-    # 如果配置文件不存在，使用默认值
+    proxy_config_defaults = None
+
+# 如果配置文件不存在或没有 Config 类，使用默认值
+if proxy_config_defaults is None:
     class DefaultConfig:
         DEFAULT_MAX_TOKENS = 2000
         DEFAULT_TEMPERATURE = 0.7
@@ -44,7 +49,7 @@ else:
         TIMEOUT_RETRY = 60
         MAX_RETRIES = 3
         MAX_CONCURRENT_REQUESTS = 5
-    proxy_config = DefaultConfig()
+    proxy_config_defaults = DefaultConfig
 
 app = Flask(__name__)
 
@@ -438,7 +443,7 @@ def load_api_configs():
             use_proxy = getattr(config_module, "USE_PROXY", False)
             use_sdk = getattr(config_module, "USE_SDK", False)
             available_models = getattr(config_module, "AVAILABLE_MODELS", [])
-            max_tokens = getattr(config_module, "MAX_TOKENS", proxy_config.DEFAULT_MAX_TOKENS)
+            max_tokens = getattr(config_module, "MAX_TOKENS", proxy_config_defaults.DEFAULT_MAX_TOKENS)
             default_weight = getattr(config_module, "DEFAULT_WEIGHT", 10)  # 默认权重
             endpoint = getattr(config_module, "ENDPOINT", "/v1/chat/completions")  # 自定义端点路径
             response_format = getattr(config_module, "RESPONSE_FORMAT", {
@@ -509,7 +514,7 @@ def load_api_configs():
     for api_name, api_config in FREE_APIS.items():
         proxy_info = "代理" if api_config.get('use_proxy') else "直连"
         sdk_info = "SDK" if api_config.get('use_sdk') else "HTTP"
-        max_tokens_info = api_config.get('max_tokens', proxy_config.DEFAULT_MAX_TOKENS)
+        max_tokens_info = api_config.get('max_tokens', proxy_config_defaults.DEFAULT_MAX_TOKENS)
         print(f"[配置] {api_name}: {sdk_info}/{proxy_info}, MODEL={api_config['model']}, MAX_TOKENS={max_tokens_info}")
     
     # 初始化默认权重（按加载顺序递减）
@@ -674,9 +679,9 @@ def execute_with_free_api(data, message_id):
     last_error = None
     used_api_name = None  # 记录最终使用的API名称
 
-    max_retries = proxy_config.MAX_RETRIES
-    timeout_base = proxy_config.TIMEOUT_BASE
-    timeout_retry = proxy_config.TIMEOUT_RETRY
+    max_retries = proxy_config_defaults.MAX_RETRIES
+    timeout_base = proxy_config_defaults.TIMEOUT_BASE
+    timeout_retry = proxy_config_defaults.TIMEOUT_RETRY
 
     for attempt in range(max_retries):
         api_name = get_next_available_api()
@@ -787,9 +792,9 @@ def execute_with_free_api(data, message_id):
             request_data = {
                 "model": model,
                 "messages": data.get("messages", []),
-                "temperature": data.get("temperature", proxy_config.DEFAULT_TEMPERATURE),
-                "max_tokens": data.get("max_tokens", api_config.get("max_tokens", proxy_config.DEFAULT_MAX_TOKENS)),
-                "top_p": data.get("top_p", proxy_config.DEFAULT_TOP_P),
+                "temperature": data.get("temperature", proxy_config_defaults.DEFAULT_TEMPERATURE),
+                "max_tokens": data.get("max_tokens", api_config.get("max_tokens", proxy_config_defaults.DEFAULT_MAX_TOKENS)),
+                "top_p": data.get("top_p", proxy_config_defaults.DEFAULT_TOP_P),
             }
 
             response = session.post(
