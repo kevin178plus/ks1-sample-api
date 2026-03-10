@@ -16,9 +16,5 @@ if %errorlevel% neq 0 (
 echo [Info] Starting GUI interface...
 echo.
 
-python start_all_services_gui.py
-
-if %errorlevel% neq 0 (
-    echo [Error] GUI startup failed
-    pause
-)
+start "" pythonw start_all_services_gui.py
+exit

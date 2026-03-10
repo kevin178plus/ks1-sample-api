@@ -130,6 +130,8 @@ class ServiceManagerGUI:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
+                encoding='gbk',
+                errors='replace',
                 bufsize=1,
                 universal_newlines=True
             )
@@ -286,6 +288,8 @@ def main():
     root = Tk()
     app = ServiceManagerGUI(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
+    # 延迟 3 秒后自动启动所有服务
+    root.after(3000, app.start_all_services)
     root.mainloop()
 
 if __name__ == "__main__":
