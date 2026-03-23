@@ -43,6 +43,15 @@ class AppState:
         # 重启标志
         self.restart_flag = False
         
+        # 最近使用的模型
+        self.last_used_model = {}
+        self._model_lock = threading.Lock()
+
+        # 失败 API 临时黑名单（API名称 -> 失败时间）
+        self.failed_apis = {}
+        self._failed_apis_lock = threading.Lock()
+        self.failed_api_blacklist_duration = 60  # 黑名单持续时间（秒）
+
     # ==================== 并发控制 ====================
     
     def increment_active_requests(self):
@@ -174,3 +183,60 @@ class AppState:
             'history': self._history_lock,
         }
         return locks.get(lock_name)
+    
+    # ==================== 最近使用模型 ====================
+    
+    def set_last_used_model(self, api_name: str, model: str):
+        """设置最近使用的模型"""
+        with self._model_lock:
+            self.last_used_model[api_name] = model
+    
+    def get_last_used_model(self, api_name: str) -> Optional[str]:
+        """获取最近使用的模型"""
+        with self._model_lock:
+            return self.last_used_model.get(api_name)
+    
+    def get_all_last_used_models(self) -> Dict[str, str]:
+        """获取所有最近使用的模型"""
+        with self._model_lock:
+            return dict(self.last_used_model)
+
+    # ==================== 失败 API 黑名单管理 ====================
+
+    def mark_api_failed_temporarily(self, api_name: str):
+        """将 API 标记为临时失败，加入黑名单"""
+        with self._failed_apis_lock:
+            self.failed_apis[api_name] = datetime.now().timestamp()
+            print(f"[黑名单] {api_name} 已加入临时黑名单 ({self.failed_api_blacklist_duration}秒)")
+
+    def is_api_blacklisted(self, api_name: str) -> bool:
+        """检查 API 是否在黑名单中"""
+        with self._failed_apis_lock:
+            if api_name not in self.failed_apis:
+                return False
+
+            # 检查是否已过期
+            failed_time = self.failed_apis[api_name]
+            current_time = datetime.now().timestamp()
+
+            if current_time - failed_time > self.failed_api_blacklist_duration:
+                # 已过期，从黑名单移除
+                del self.failed_apis[api_name]
+                print(f"[黑名单] {api_name} 已从黑名单移除")
+                return False
+
+            return True
+
+    def cleanup_failed_apis(self):
+        """清理过期的失败 API 记录"""
+        with self._failed_apis_lock:
+            current_time = datetime.now().timestamp()
+            expired_apis = []
+
+            for api_name, failed_time in self.failed_apis.items():
+                if current_time - failed_time > self.failed_api_blacklist_duration:
+                    expired_apis.append(api_name)
+
+            for api_name in expired_apis:
+                del self.failed_apis[api_name]
+                print(f"[黑名单] 清理过期的失败 API: {api_name}")

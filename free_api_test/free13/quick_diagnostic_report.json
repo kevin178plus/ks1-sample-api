@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-03-13 20:20:57",
+  "results": {
+    "base": {
+      "status": 200,
+      "time": 0.6861670017242432,
+      "pass": true
+    },
+    "direct_30s": {
+      "status": "TIMEOUT",
+      "pass": false
+    },
+    "proxy_30s": {
+      "status": "TIMEOUT",
+      "pass": false
+    }
+  }
+}

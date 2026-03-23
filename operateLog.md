@@ -414,4 +414,56 @@ python multi_free_api_proxy_v3.py
 
 ---
 
+## 2026-03-10 - GUI优化与Debug页面增强
+
+**更新时间：** 2026-03-10
+
+### 一、GUI优化 (start_all_services_gui.py)
+
+#### 1. 新增配置文件 gui_config.json
+- 可配置 free5 和 free8 是否自动启动
+- 配置文件格式：
+```json
+{
+    "free5": {"auto_start": true},
+    "free8": {"auto_start": true}
+}
+```
+
+#### 2. GUI界面改进
+- 新增 Free5 和 Free8 复选框开关，可单独控制
+- 取消选中时自动停止对应服务
+- 根据配置决定是否自动启动
+
+### 二、Debug页面增强 (multi_free_api_proxy_v3_optimized.py)
+
+#### 1. API管理表格新增列
+- 在"当前模型"左侧新增"标题/URL"列
+- 显示逻辑：优先显示 TITLE_NAME，没有则显示 BASE_URL（带换行）
+
+#### 2. 新增 TITLE_NAME 配置
+所有 free* 目录的 config.py 新增 TITLE_NAME 字段：
+
+| API | TITLE_NAME |
+|-----|------------|
+| free1 | OpenRouter |
+| free2 | ChatAnywhere |
+| free3 | FreeChatGPT |
+| free4 | Mistral AI |
+| free5 | iFlow SDK |
+| free6 | CSDN |
+| free7 | NVIDIA |
+| free8 | Friendli.ai |
+| free9 | 火山引擎 |
+| free10 | 联通云 |
+| free11 | 白山智算 |
+| free12 | OpenCode AI |
+
+#### 3. 最近使用模型跟踪
+- 新增 app_state.py 方法跟踪最近使用的模型
+- 请求成功时自动记录当前使用的模型
+- Debug页面显示"当前模型"列
+
+---
+
 *最后更新：2026-03-10*

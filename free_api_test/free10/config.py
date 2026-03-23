@@ -4,6 +4,8 @@ free10 - 联通云 API 配置（使用联通云贵阳基地二区 API）
 import os
 from dotenv import load_dotenv
 
+TITLE_NAME = "联通云"
+
 # 加载环境变量
 load_dotenv()
 # API Key（联通云 Coding Plan 专属 API Key）

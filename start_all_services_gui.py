@@ -8,9 +8,13 @@ import sys
 import subprocess
 import threading
 import time
+import json
 from pathlib import Path
 from tkinter import ttk, scrolledtext, Tk, StringVar, messagebox
 import tkinter as tk
+
+CONFIG_FILE = "gui_config.json"
+
 
 class ServiceManagerGUI:
     def __init__(self, root):
@@ -22,22 +26,38 @@ class ServiceManagerGUI:
         self.running = False
         self.is_minimized = False
 
-        # 性能优化：最大行数限制和缓冲区
-        self.max_lines = 1000  # 每个文本框最大行数
+        self.load_config()
+
+        self.max_lines = 1000
         self.output_buffers = {
             "free5": [],
             "free8": [],
             "main": []
         }
 
-        # 监听窗口状态变化
         self.root.bind('<Unmap>', self.on_minimize)
         self.root.bind('<Map>', self.on_restore)
 
         self.create_widgets()
 
+    def load_config(self):
+        config_path = Path(__file__).parent / CONFIG_FILE
+        if config_path.exists():
+            with open(config_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+        else:
+            self.config = {
+                "free5": {"auto_start": True},
+                "free8": {"auto_start": True}
+            }
+            self.save_config()
+
+    def save_config(self):
+        config_path = Path(__file__).parent / CONFIG_FILE
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, indent=4, ensure_ascii=False)
+
     def create_widgets(self):
-        # 顶部控制栏
         control_frame = ttk.Frame(self.root, padding="10")
         control_frame.pack(fill=tk.X)
 
@@ -50,14 +70,68 @@ class ServiceManagerGUI:
         self.stop_button = ttk.Button(control_frame, text="停止所有服务", command=self.stop_all_services, state=tk.DISABLED)
         self.stop_button.pack(side=tk.LEFT, padx=5)
 
-        # 创建Tab控件
+        service_control_frame = ttk.Frame(control_frame)
+        service_control_frame.pack(side=tk.LEFT, padx=20)
+
+        self.free5_enabled = tk.BooleanVar(value=self.config.get("free5", {}).get("auto_start", True))
+        self.free8_enabled = tk.BooleanVar(value=self.config.get("free8", {}).get("auto_start", True))
+
+        ttk.Label(service_control_frame, text="服务控制:").pack(side=tk.LEFT, padx=5)
+
+        free5_check = ttk.Checkbutton(
+            service_control_frame,
+            text="Free5",
+            variable=self.free5_enabled,
+            command=self.on_free5_toggle
+        )
+        free5_check.pack(side=tk.LEFT, padx=5)
+
+        free8_check = ttk.Checkbutton(
+            service_control_frame,
+            text="Free8",
+            variable=self.free8_enabled,
+            command=self.on_free8_toggle
+        )
+        free8_check.pack(side=tk.LEFT, padx=5)
+
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 创建三个服务的Tab
         self.create_service_tab("free5", "Free5 服务 (端口 5005)")
         self.create_service_tab("free8", "Free8 服务 (端口 5008)")
         self.create_service_tab("main", "主服务 (端口 5000 - 优化版)")
+
+    def on_free5_toggle(self):
+        self.config["free5"] = {"auto_start": self.free5_enabled.get()}
+        self.save_config()
+        
+        if not self.free5_enabled.get() and "free5" in self.processes:
+            self.stop_service("free5")
+
+    def on_free8_toggle(self):
+        self.config["free8"] = {"auto_start": self.free8_enabled.get()}
+        self.save_config()
+        
+        if not self.free8_enabled.get() and "free8" in self.processes:
+            self.stop_service("free8")
+
+    def stop_service(self, service_id):
+        """停止单个服务"""
+        if service_id in self.processes:
+            process = self.processes[service_id]
+            try:
+                self.append_output(service_id, "[停止] 正在停止服务...", "warning")
+                process.terminate()
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    self.append_output(service_id, "[停止] 强制终止进程...", "error")
+                    process.kill()
+                    process.wait()
+                del self.processes[service_id]
+                self.update_service_status(service_id, "已停止", "gray")
+            except Exception as e:
+                self.append_output(service_id, f"[错误] 停止失败: {str(e)}", "error")
 
     def create_service_tab(self, service_id, title):
         frame = ttk.Frame(self.notebook)
@@ -185,31 +259,32 @@ class ServiceManagerGUI:
             return
 
         script_dir = Path(__file__).parent
-
-        # 获取Python路径
         python_path = sys.executable
 
-        # 启动 free5
-        self.append_output("free5", "=" * 50, "info")
-        self.append_output("free5", "正在启动 Free5 服务...", "info")
-        free5_cmd = [python_path, "iflow_api_proxy.py"]
-        free5_dir = script_dir / "free_api_test" / "free5"
-        self.start_service("free5", free5_cmd, free5_dir)
+        if self.free5_enabled.get():
+            self.append_output("free5", "=" * 50, "info")
+            self.append_output("free5", "正在启动 Free5 服务...", "info")
+            free5_cmd = [python_path, "iflow_api_proxy.py"]
+            free5_dir = script_dir / "free_api_test" / "free5"
+            self.start_service("free5", free5_cmd, free5_dir)
+            time.sleep(2)
+        else:
+            self.append_output("free5", "=" * 50, "info")
+            self.append_output("free5", "已禁用，跳过启动", "info")
+            self.update_service_status("free5", "已禁用", "gray")
 
-        # 等待
-        time.sleep(2)
+        if self.free8_enabled.get():
+            self.append_output("free8", "=" * 50, "info")
+            self.append_output("free8", "正在启动 Free8 服务...", "info")
+            free8_cmd = [python_path, "friendli_service.py"]
+            free8_dir = script_dir / "free_api_test" / "free8"
+            self.start_service("free8", free8_cmd, free8_dir)
+            time.sleep(2)
+        else:
+            self.append_output("free8", "=" * 50, "info")
+            self.append_output("free8", "已禁用，跳过启动", "info")
+            self.update_service_status("free8", "已禁用", "gray")
 
-        # 启动 free8
-        self.append_output("free8", "=" * 50, "info")
-        self.append_output("free8", "正在启动 Free8 服务...", "info")
-        free8_cmd = [python_path, "friendli_service.py"]
-        free8_dir = script_dir / "free_api_test" / "free8"
-        self.start_service("free8", free8_cmd, free8_dir)
-
-        # 等待
-        time.sleep(2)
-
-        # 启动主服务
         self.append_output("main", "=" * 50, "info")
         self.append_output("main", "正在启动主服务 (优化版)...", "info")
         main_cmd = [python_path, "multi_free_api_proxy_v3_optimized.py"]
@@ -288,8 +363,17 @@ def main():
     root = Tk()
     app = ServiceManagerGUI(root)
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
-    # 延迟 3 秒后自动启动所有服务
-    root.after(3000, app.start_all_services)
+
+    auto_start_services = []
+    if app.free5_enabled.get():
+        auto_start_services.append("free5")
+    if app.free8_enabled.get():
+        auto_start_services.append("free8")
+
+    if auto_start_services:
+        delay_ms = 3000
+        root.after(delay_ms, app.start_all_services)
+
     root.mainloop()
 
 if __name__ == "__main__":

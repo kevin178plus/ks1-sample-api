@@ -4,6 +4,8 @@ free12 - OpenCode AI API 配置
 import os
 from dotenv import load_dotenv
 
+TITLE_NAME = "OpenCode AI"
+
 # 加载环境变量
 load_dotenv()
 

@@ -235,10 +235,13 @@ function refreshManage() {
                 const tr = document.createElement('tr');
                 const isEnabled = info.enabled;
                 const weight = info.weight;
+                const titleDisplay = info.title_display || 'N/A';
+                const currentModel = info.model || 'N/A';
                 
                 tr.innerHTML = `
                     <td><strong>${apiName}</strong></td>
-                    <td><small>${details[apiName]?.weight !== undefined ? 'N/A' : 'N/A'}</small></td>
+                    <td><small>${titleDisplay}</small></td>
+                    <td><small>${currentModel}</small></td>
                     <td><span class="status-badge ${isEnabled ? 'enabled' : 'disabled'}">${isEnabled ? '已启用' : '已停用'}</span></td>
                     <td>
                         <input type="number" class="weight-input" id="weight_${apiName}" value="${weight}" min="0" max="999">
@@ -256,7 +259,7 @@ function refreshManage() {
         })
         .catch(error => {
             console.error('Error:', error);
-            document.getElementById('manageTableBody').innerHTML = '<tr><td colspan="5" style="color: red;">加载失败</td></tr>';
+            document.getElementById('manageTableBody').innerHTML = '<tr><td colspan="6" style="color: red;">加载失败</td></tr>';
         });
 }
 

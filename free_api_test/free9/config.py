@@ -1,6 +1,7 @@
 # API配置
 import os
 
+TITLE_NAME = "火山 Coding Plan"
 API_KEY = os.getenv("FREE9_API_KEY")
 BASE_URL = "https://ark.cn-beijing.volces.com/api/coding"
 MODEL_NAME = "ark-code-latest"

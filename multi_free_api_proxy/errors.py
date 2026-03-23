@@ -45,3 +45,8 @@ class NoAvailableAPIError(APIError):
     """没有可用 API 错误"""
     def __init__(self, message: str = "No available API"):
         super().__init__(ErrorType.API_ERROR, message)
+
+class FormatError(APIError):
+    """格式错误 - 上游返回格式不正确"""
+    def __init__(self, message: str = "Invalid response format"):
+        super().__init__(ErrorType.API_ERROR, message)

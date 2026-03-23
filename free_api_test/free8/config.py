@@ -2,6 +2,8 @@
 # Friendli.ai API 配置
 import os
 
+TITLE_NAME = "Friendli.ai"
+
 API_KEY = os.getenv("FREE8_API_KEY")
 BASE_URL = "https://api.friendli.ai/serverless/v1"
 

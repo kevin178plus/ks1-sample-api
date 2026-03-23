@@ -1,0 +1,99 @@
+{
+  "timestamp": "2026-03-13 20:23:06",
+  "config": {
+    "base_url": "https://api-ai.gitcode.com/v1",
+    "model": "Qwen/Qwen3.5-397B-A17B",
+    "proxy_tested": "127.0.0.1:7897"
+  },
+  "results": {
+    "直连 -30s": {
+      "base_connection": {
+        "status": 200,
+        "time": 0.6099934577941895,
+        "success": true
+      },
+      "models_endpoint": {
+        "status": 404,
+        "time": 0.555201530456543,
+        "success": false
+      },
+      "chat_completion": {
+        "status": "TIMEOUT",
+        "success": false
+      }
+    },
+    "直连 -60s": {
+      "base_connection": {
+        "status": 200,
+        "time": 0.7957959175109863,
+        "success": true
+      },
+      "models_endpoint": {
+        "status": 404,
+        "time": 0.8898594379425049,
+        "success": false
+      },
+      "chat_completion": {
+        "status": "TIMEOUT",
+        "success": false
+      }
+    },
+    "直连 -120s": {
+      "skipped": true
+    },
+    "代理 -30s": {
+      "base_connection": {
+        "status": 200,
+        "time": 0.8429265022277832,
+        "success": true
+      },
+      "models_endpoint": {
+        "status": 404,
+        "time": 0.7561545372009277,
+        "success": false
+      },
+      "chat_completion": {
+        "status": "TIMEOUT",
+        "success": false
+      }
+    },
+    "代理 -60s": {
+      "base_connection": {
+        "status": 200,
+        "time": 0.7131290435791016,
+        "success": true
+      },
+      "models_endpoint": {
+        "status": 404,
+        "time": 0.7768983840942383,
+        "success": false
+      },
+      "chat_completion": {
+        "status": "TIMEOUT",
+        "success": false
+      }
+    },
+    "代理 -120s": {
+      "base_connection": {
+        "status": 200,
+        "time": 0.8471722602844238,
+        "success": true
+      },
+      "models_endpoint": {
+        "status": 404,
+        "time": 0.8302078247070312,
+        "success": false
+      },
+      "chat_completion": {
+        "status": "TIMEOUT",
+        "success": false
+      }
+    }
+  },
+  "summary": {
+    "total_tests": 6,
+    "successful_tests": 0,
+    "skipped_tests": 1,
+    "success_rate": "0.0%"
+  }
+}

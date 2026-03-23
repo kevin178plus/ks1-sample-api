@@ -1,6 +1,7 @@
 # API配置
 import os
 
+TITLE_NAME = "CSDN"
 API_KEY = os.getenv("FREE6_API_KEY")
 BASE_URL = "https://models.csdn.net"
 MODEL_NAME = "Deepseek-V3"

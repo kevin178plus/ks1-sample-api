@@ -121,10 +121,14 @@ class Config:
 
 ### 启用调试模式
 
-创建 `DEBUG_MODE.txt` 文件：
+在 `multi_free_api_proxy` 目录下创建 `DEBUG_MODE.txt` 文件：
+
 ```bash
-touch DEBUG_MODE.txt
+cd multi_free_api_proxy
+type nul > DEBUG_MODE.txt
 ```
+
+> **注意**：必须在 `multi_free_api_proxy/` 目录下创建，不是项目根目录。
 
 ## 📝 常见问题
 
@@ -149,14 +153,7 @@ touch DEBUG_MODE.txt
 
 ### Q: 调试面板无法访问？
 
-**A:** 需要启用调试模式：
-
-```bash
-# 创建 DEBUG_MODE.txt 文件
-touch DEBUG_MODE.txt
-
-# 重启服务
-```
+**A:** 需要启用调试模式。在 `multi_free_api_proxy` 目录下创建 `DEBUG_MODE.txt` 文件，然后重启服务：
 
 ### Q: API 请求失败？
 
@@ -176,6 +173,26 @@ touch DEBUG_MODE.txt
    ```bash
    tail -f daemon.log
    ```
+
+4. **智能切换功能**：系统会自动处理格式错误
+   - 如果上游返回格式错误（如非 JSON），系统会自动切换到下一个 API
+   - 查看 `[黑名单]` 和 `[重试]` 日志了解切换过程
+   - 格式错误的 API 会被临时加入黑名单（60秒）
+   - 参考 `DEBUG_GUIDE.md` 进行详细诊断
+
+### Q: 为什么某些 API 被临时跳过？
+
+**A:** 这是失败 API 黑名单机制：
+
+- 返回格式错误的 API 会自动加入黑名单（60秒）
+- 在黑名单期间，该 API 不会被选中
+- 60秒后自动从黑名单移除
+- 权重会降低（-50），减少再次被选中的概率
+
+可以通过以下命令查看 API 权重：
+```bash
+curl http://localhost:5000/debug/api/weight
+```
 
 ### Q: 如何切换回原始版本？
 
@@ -205,7 +222,44 @@ tail -f daemon.log
 
 # 搜索特定错误
 grep "ERROR" daemon.log
+
+# 搜索诊断信息
+grep "诊断" daemon.log
+
+# 搜索黑名单信息
+grep "黑名单" daemon.log
+
+# 搜索格式错误
+grep "JSON解析失败" daemon.log
 ```
+
+### 诊断上游问题
+
+系统提供详细的诊断日志，帮助快速定位问题：
+
+```bash
+# 查看上游响应诊断
+grep "\[诊断\]" daemon.log
+
+# 查看格式错误详情
+grep "\[错误\].*原始响应" daemon.log
+
+# 查看 API 切换过程
+grep "切换到下一个 API" daemon.log
+```
+
+**诊断日志示例**：
+```
+[诊断] free5 上游响应状态码: 200
+[诊断] free5 上游响应Content-Type: application/json
+[诊断] free5 上游响应长度: 1234 字符
+[错误] free5 JSON解析失败: Expecting value: line 1 column 1 (char 0)
+[错误] free5 原始响应 (前500字符): <实际的错误内容>
+[黑名单] free5 已加入临时黑名单 (60秒)
+[重试] 立即尝试下一个 API...
+```
+
+详细的诊断步骤请参考：[DEBUG_GUIDE.md](DEBUG_GUIDE.md)
 
 ### 测试 API 连接
 

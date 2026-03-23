@@ -4,6 +4,8 @@ free11 - 白山智算 API 配置
 import os
 from dotenv import load_dotenv
 
+TITLE_NAME = "白山智算"
+
 # 加载环境变量
 load_dotenv()
 

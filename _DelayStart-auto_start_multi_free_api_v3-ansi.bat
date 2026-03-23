@@ -56,6 +56,9 @@ echo.
 echo [启动] 正在启动多Free API代理服务 (V3)...
 echo.
 
+start "" pythonw start_all_services_gui.py
+exit
+
 REM 启动服务
 python multi_free_api_proxy\multi_free_api_proxy_v3.py
 

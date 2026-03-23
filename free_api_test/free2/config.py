@@ -1,6 +1,7 @@
 # API配置
 import os
 
+TITLE_NAME = "ChatAnywhere"
 API_KEY = os.getenv("FREE2_API_KEY")
 BASE_URL = "https://api.chatanywhere.tech"
 MODEL_NAME = "gpt-3.5-turbo"

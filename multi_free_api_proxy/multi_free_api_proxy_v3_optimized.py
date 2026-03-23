@@ -260,40 +260,53 @@ def test_all_apis_startup():
 
 def get_next_available_api():
     """获取下一个可用的API（基于权重选择）"""
+    # 清理过期的黑名单记录
+    app_state.cleanup_failed_apis()
+
     available_list = app_state.get_available_apis()
-    
+
     if not available_list:
         return None
-    
+
+    # 过滤掉黑名单中的 API
+    filtered_list = [api_name for api_name in available_list if not app_state.is_api_blacklisted(api_name)]
+
+    if not filtered_list:
+        # 如果所有 API 都在黑名单中，使用原始列表
+        print(f"[警告] 所有可用的 API 都在黑名单中，使用原始列表")
+        filtered_list = available_list
+    else:
+        print(f"[选择] 可用 API 数量: {len(filtered_list)}/{len(available_list)}")
+
     # 检查是否有特别权重的API
     special_weight_apis = []
-    for api_name in available_list:
+    for api_name in filtered_list:
         weight = app_state.get_weight(api_name, 10)
         if weight > config.SPECIAL_WEIGHT_THRESHOLD:
             special_weight_apis.append((api_name, weight))
-    
+
     if special_weight_apis:
         special_weight_apis.sort(key=lambda x: x[1], reverse=True)
         selected_api = special_weight_apis[0][0]
         print(f"[权重] 特别权重选中: {selected_api} (权重: {special_weight_apis[0][1]})")
         return selected_api
-    
+
     # 按权重随机选择
-    weights = [app_state.get_weight(api_name, 10) for api_name in available_list]
+    weights = [app_state.get_weight(api_name, 10) for api_name in filtered_list]
     total_weight = sum(weights)
-    
+
     if total_weight <= 0:
-        selected_api = available_list[0]
+        selected_api = filtered_list[0]
     else:
         r = random.randint(1, total_weight)
         cumulative = 0
-        selected_api = available_list[0]
-        for i, api_name in enumerate(available_list):
+        selected_api = filtered_list[0]
+        for i, api_name in enumerate(filtered_list):
             cumulative += weights[i]
             if r <= cumulative:
                 selected_api = api_name
                 break
-    
+
     return selected_api
 
 def mark_api_failure(api_name):
@@ -328,15 +341,15 @@ def mark_api_success(api_name):
         api_config["available"] = True
         print(f"[API状态] {api_name} 已恢复并重新加入可用列表")
 
-def decrease_api_weight(api_name):
+def decrease_api_weight(api_name, reduction=1):
     """自动减少API权重"""
     current_weight = app_state.get_weight(api_name, 10)
-    
+
     if current_weight > config.SPECIAL_WEIGHT_THRESHOLD:
         if current_weight > config.MIN_AUTO_DECREASE_WEIGHT:
-            new_weight = current_weight - 1
+            new_weight = max(config.MIN_AUTO_DECREASE_WEIGHT, current_weight - reduction)
             app_state.set_weight(api_name, new_weight)
-            print(f"[权重] {api_name} 权重自动减少: {current_weight} -> {new_weight}")
+            print(f"[权重] {api_name} 权重自动减少: {current_weight} -> {new_weight} (减少: {reduction})")
 
 # ==================== 路由定义 ====================
 
@@ -552,17 +565,53 @@ def set_api_weight():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+def load_free_api_config(api_name):
+    """加载 Free API 的配置"""
+    config_path = Path(__file__).parent.parent / "free_api_test" / api_name / "config.py"
+    if not config_path.exists():
+        return None
+    
+    try:
+        spec = importlib.util.spec_from_file_location(f"{api_name}_config", config_path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        
+        title_name = getattr(module, 'TITLE_NAME', None)
+        base_url = getattr(module, 'BASE_URL', '')
+        
+        return {
+            "title_name": title_name,
+            "base_url": base_url
+        }
+    except Exception as e:
+        print(f"[配置加载] {api_name} 配置加载失败: {e}")
+        return None
+
+
 @app.route('/debug/api/weight', methods=['GET'])
 def get_api_weights():
     """获取所有API的权重配置"""
     try:
         api_details = {}
+        all_last_models = app_state.get_all_last_used_models()
+        
         for api_name in app_state.get_all_apis():
             api_config = app_state.get_api(api_name)
+            
+            api_info = load_free_api_config(api_name)
+            
+            title_display = ""
+            if api_info:
+                if api_info.get("title_name"):
+                    title_display = api_info["title_name"]
+                elif api_info.get("base_url"):
+                    title_display = api_info["base_url"].replace("/", "/\n")
+            
             api_details[api_name] = {
                 "weight": app_state.get_weight(api_name, 10),
                 "enabled": api_name in app_state.get_available_apis(),
-                "model": api_config.get("model", "unknown") if api_config else "unknown"
+                "model": all_last_models.get(api_name, api_config.get("model", "unknown") if api_config else "unknown"),
+                "title_display": title_display
             }
 
         return jsonify({
@@ -621,10 +670,35 @@ def execute_with_free_api(data, message_id):
                 )
                 response.raise_for_status()
 
-                result = response.json()
+                # 诊断：记录原始响应
+                response_text = response.text
+                print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
+                print(f"[诊断] {api_name} 上游响应Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+                print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
+
+                if not response_text or response_text.strip() == '':
+                    print(f"[错误] {api_name} 上游返回空响应")
+                    raise Exception(f"Empty response from {api_name}")
+
+                if len(response_text) < 50:
+                    print(f"[诊断] {api_name} 上游响应内容: {response_text[:200]}")
+
+                try:
+                    result = response.json()
+                except json.JSONDecodeError as e:
+                    print(f"[错误] {api_name} JSON解析失败: {str(e)}")
+                    print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                    # 将 API 加入黑名单，快速切换
+                    app_state.mark_api_failed_temporarily(api_name)
+                    # 大幅降低权重
+                    decrease_api_weight(api_name, reduction=50)
+                    raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
+
                 print(f"[请求] {api_name} 独立服务成功")
 
-                # 标记成功
+                used_model = data.get("model", "unknown") if isinstance(data, dict) else "unknown"
+                app_state.set_last_used_model(api_name, used_model)
+
                 mark_api_success(api_name)
                 used_api_name = api_name
 
@@ -682,7 +756,33 @@ def execute_with_free_api(data, message_id):
             )
             response.raise_for_status()
 
-            result = response.json()
+            # 诊断：记录原始响应
+            response_text = response.text
+            print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
+            print(f"[诊断] {api_name} 上游响应Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+            print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
+
+            if not response_text or response_text.strip() == '':
+                print(f"[错误] {api_name} 上游返回空响应")
+                raise Exception(f"Empty response from {api_name}")
+
+            if len(response_text) < 50:
+                print(f"[诊断] {api_name} 上游响应内容: {response_text[:200]}")
+
+            try:
+                result = response.json()
+            except json.JSONDecodeError as e:
+                print(f"[错误] {api_name} JSON解析失败: {str(e)}")
+                print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                # 将 API 加入黑名单，快速切换
+                app_state.mark_api_failed_temporarily(api_name)
+                # 大幅降低权重
+                decrease_api_weight(api_name, reduction=50)
+                raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
+
+            used_model = api_config.get("model", "unknown")
+            app_state.set_last_used_model(api_name, used_model)
+            
             mark_api_success(api_name)
             decrease_api_weight(api_name)
             used_api_name = api_name
@@ -724,6 +824,19 @@ def execute_with_free_api(data, message_id):
                 time.sleep(wait_time)
             else:
                 break
+
+        except FormatError as e:
+            # 格式错误：快速切换到下一个 API，不等待
+            last_error = e
+            print(f"[请求] 格式错误 - 快速切换到下一个 API: {str(e)}")
+            mark_api_failure(api_name)
+
+            if attempt < config.MAX_RETRIES - 1:
+                retry_count += 1
+                print(f"[重试] 立即尝试下一个 API...")
+                continue
+
+            raise last_error
 
         except Exception as e:
             last_error = e

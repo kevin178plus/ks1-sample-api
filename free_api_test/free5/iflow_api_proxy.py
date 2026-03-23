@@ -151,13 +151,20 @@ def execute_with_iflow(data, message_id):
         # 使用 iflow_sdk 查询
         print(f"[iflow] 发送查询: {user_message[:50]}...")
 
-        # 创建事件循环执行异步查询
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        # 使用 asyncio.run() 执行异步查询（推荐方式，避免事件循环冲突）
         try:
-            response_text = loop.run_until_complete(iflow_query(user_message))
-        finally:
-            loop.close()
+            response_text = asyncio.run(iflow_query(user_message))
+        except Exception as query_error:
+            print(f"[iflow] 查询异常: {type(query_error).__name__}: {query_error}")
+            raise RuntimeError(f"iflow query failed: {query_error}") from query_error
+
+        # 验证响应
+        if response_text is None:
+            raise ValueError("iflow_query returned None")
+        if not isinstance(response_text, str):
+            raise ValueError(f"iflow_query returned non-string type: {type(response_text)}")
+        if not response_text.strip():
+            raise ValueError("iflow_query returned empty string")
 
         # 构建 OpenAI 兼容格式的响应
         result = {
@@ -183,7 +190,7 @@ def execute_with_iflow(data, message_id):
         return result, 0  # 返回结果和重试次数
 
     except Exception as e:
-        print(f"[iflow] 查询失败: {e}")
+        print(f"[iflow] 查询失败: {type(e).__name__}: {e}")
         raise
 
 @app.route('/v1/chat/completions', methods=['POST'])

@@ -1,6 +1,7 @@
 # API配置
 import os
 
+TITLE_NAME = "OpenRouter"
 API_KEY = os.getenv("FREE1_API_KEY")
 BASE_URL = "https://openrouter.ai"
 MODEL_NAME = "openrouter/free"

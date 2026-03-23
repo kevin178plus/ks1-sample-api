@@ -2,6 +2,8 @@
 import os
 from dotenv import load_dotenv
 
+TITLE_NAME = "NVIDIA"
+
 # 加载 .env 文件
 load_dotenv()
 

@@ -1,6 +1,7 @@
 # API配置
 import os
 
+TITLE_NAME = "Mistral AI"
 API_KEY = os.getenv("FREE4_API_KEY")
 BASE_URL = "https://api.mistral.ai"
 MODEL_NAME = "mistral-small-latest"
