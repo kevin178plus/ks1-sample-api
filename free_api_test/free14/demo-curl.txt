@@ -1,0 +1,12 @@
+
+  curl https://cgc.chancloud.com/cgc/api/public/ai/server/chat/stream 
+  -H "Content-Type: application/json" 
+  -H "Authorization: Bearer cgc-apikey-Q8gx3J_XSs4C7b12KCE09N7wrZBaAE5PIW0eJAMEDhaa2UF7" 
+  -d '{
+    "model": "Nemotron-3-Super-120B-A12B",
+    "messages": [{"role": "user", "content": "写一首关于GPU计算性能的打油诗"}],
+    "temperature": 0.5,
+    "top_p": 1,
+    "max_tokens": 1024,
+    "stream": true
+  }'

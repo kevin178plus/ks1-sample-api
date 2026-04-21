@@ -1,5 +1,10 @@
 # iFlow SDK API
 
+## ⚠️ 服务状态：已停用
+
+> **注意**：iFlow SDK 服务已于 2026 年 3 月停用，此 API 配置已被禁用。
+> 如需启用，请在 `.env` 文件中取消注释 `FREE5_API_KEY` 配置。
+
 ## 概述
 
 iFlow SDK 是一个基于 Python 的异步 AI 查询 SDK，提供简单易用的接口来访问 AI 模型服务。

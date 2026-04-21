@@ -27,6 +27,40 @@ from errors import ErrorType, APIError, TimeoutError, UpstreamError, ConcurrentL
 config = get_config()
 app_state = AppState(config)
 
+def update_call_stats(success=True, is_timeout=False):
+    """更新调用统计"""
+    cache_dir = config.CACHE_DIR or os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cache')
+    if not cache_dir:
+        return
+    
+    try:
+        cache_path = Path(cache_dir)
+        cache_path.mkdir(parents=True, exist_ok=True)
+        
+        today = datetime.now().strftime("%Y%m%d")
+        counter_file = cache_path / f"CALLS_{today}.json"
+        
+        if counter_file.exists():
+            with open(counter_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+        else:
+            data = {"total": 0, "success": 0, "failed": 0, "timeout": 0, "retry": 0}
+        
+        data["total"] = data.get("total", 0) + 1
+        if is_timeout:
+            data["timeout"] = data.get("timeout", 0) + 1
+        elif success:
+            data["success"] = data.get("success", 0) + 1
+        else:
+            data["failed"] = data.get("failed", 0) + 1
+        data["date"] = today
+        data["last_updated"] = datetime.now().isoformat()
+        
+        with open(counter_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception as e:
+        print(f"[统计] 更新失败: {e}")
+
 # 创建 Flask 应用
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -180,8 +214,8 @@ def test_api_startup(api_name):
 
     print(f"[启动测试] 测试 {api_name} (模型: {model}, 代理: {use_proxy})...")
 
-    if api_name in ["free5", "free8"]:
-        service_port = 5005 if api_name == "free5" else 5008
+    if api_name in ["free8"]:
+        service_port = 5008
         service_url = f"http://localhost:{service_port}/health"
 
         try:
@@ -406,12 +440,24 @@ def chat_completions():
         result, retry_count, used_api_name = execute_with_free_api(data, message_id)
 
         print(f"[请求] 请求成功 (ID: {message_id}, API: {used_api_name}, 重试: {retry_count})")
+        
+        update_call_stats(success=True)
+        
+        if retry_count > 0:
+            update_call_stats(success=True, is_timeout=False)
 
         return jsonify(result), 200
+
+    except TimeoutError as e:
+        print(f"[请求] 超时: {str(e)}")
+        app_state.set_error(ErrorType.TIMEOUT.value, str(e))
+        update_call_stats(success=False, is_timeout=True)
+        return jsonify({"error": "Request timeout"}), 504
 
     except Exception as e:
         print(f"[错误] 请求失败: {str(e)}")
         app_state.set_error(ErrorType.UNKNOWN.value, str(e))
+        update_call_stats(success=False)
         return jsonify({"error": str(e)}), 500
 
     finally:
@@ -454,7 +500,7 @@ def health_upstream():
 def debug_stats():
     """获取调试统计信息"""
     try:
-        cache_dir = config.CACHE_DIR
+        cache_dir = config.CACHE_DIR or os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cache')
         if not cache_dir:
             return jsonify({
                 "total": 0,
@@ -646,9 +692,9 @@ def execute_with_free_api(data, message_id):
 
         api_config = app_state.get_api(api_name)
 
-        # 路由到独立服务（free5 和 free8）
-        if api_name in ["free5", "free8"]:
-            service_port = 5005 if api_name == "free5" else 5008
+        # 路由到独立服务（free8）
+        if api_name in ["free8"]:
+            service_port = 5008
             service_url = f"http://localhost:{service_port}/v1/chat/completions"
 
             try:
@@ -670,10 +716,15 @@ def execute_with_free_api(data, message_id):
                 )
                 response.raise_for_status()
 
+                content_type = response.headers.get('Content-Type', '')
+                if 'text/html' in content_type.lower():
+                    print(f"[错误] {api_name} 返回HTML而非JSON")
+                    raise Exception(f"Upstream {api_name} returned HTML instead of JSON")
+
                 # 诊断：记录原始响应
                 response_text = response.text
                 print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
-                print(f"[诊断] {api_name} 上游响应Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+                print(f"[诊断] {api_name} 上游响应Content-Type: {content_type}")
                 print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
 
                 if not response_text or response_text.strip() == '':
@@ -756,10 +807,15 @@ def execute_with_free_api(data, message_id):
             )
             response.raise_for_status()
 
+            content_type = response.headers.get('Content-Type', '')
+            if 'text/html' in content_type.lower():
+                print(f"[错误] {api_name} 返回HTML而非JSON")
+                raise Exception(f"Upstream {api_name} returned HTML instead of JSON")
+
             # 诊断：记录原始响应
             response_text = response.text
             print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
-            print(f"[诊断] {api_name} 上游响应Content-Type: {response.headers.get('Content-Type', 'N/A')}")
+            print(f"[诊断] {api_name} 上游响应Content-Type: {content_type}")
             print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
 
             if not response_text or response_text.strip() == '':

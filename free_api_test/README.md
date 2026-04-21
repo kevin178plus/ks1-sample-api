@@ -36,12 +36,13 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Features**: High-performance European AI models
 - **Documentation**: See [free4/README.md](free4/README.md)
 
-### free5 - iFlow SDK API
+### free5 - iFlow SDK API ⚠️ **已停用**
 - **Provider**: iFlow
 - **Base URL**: iflow (uses SDK)
 - **Models**: iflow
 - **Features**: Python SDK-based API with async support
-- **Documentation**: See [free5/iflow_api_proxy.py](free5/iflow_api_proxy.py)
+- **Status**: Service discontinued in March 2026
+- **Documentation**: See [free5/README.md](free5/README.md)
 
 ### free6 - CSDN API
 - **Provider**: CSDN
@@ -64,18 +65,28 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Features**: High-performance LLM service with OpenAI SDK compatibility
 - **Documentation**: See [free8/README.md](free8/README.md)
 
+### free9 - 火山方舟 Coding Plan API ⚠️ **已过期**
+- **Provider**: 火山方舟 (Volcengine)
+- **Base URL**: https://ark.cn-beijing.volces.com/api/coding
+- **Models**: ark-code-latest
+- **Features**: Coding Plan API compatible with OpenAI standard
+- **Status**: Coding Plan expired in March 2026
+- **Documentation**: See [free9/README.md](free9/README.md)
+
 ## Requirements
 
 - Python 3.7+
 - requests library
-- iflow-sdk (for free5)
+- iflow-sdk (for free5, currently disabled)
 - Valid API keys for respective services
 
 ## Installation
 
 1. Install required dependencies:
 ```bash
-pip install requests iflow-sdk
+pip install requests
+# iflow-sdk is optional, only needed if you re-enable free5
+# pip install iflow-sdk
 ```
 
 2. Configure API keys in the `.env` file:
@@ -84,14 +95,19 @@ FREE1_API_KEY=your_openrouter_api_key
 FREE2_API_KEY=your_chatanywhere_api_key
 FREE3_API_KEY=your_free_v36_api_key
 FREE4_API_KEY=your_mistral_api_key
-FREE5_API_KEY=your_iflow_api_key  # Optional
+# FREE5_API_KEY=your_iflow_api_key  # Disabled - iFlow service discontinued
 FREE6_API_KEY=your_csdn_api_key
+# FREE9_API_KEY=your_volcengine_api_key  # Disabled - Coding Plan expired
 ```
 
 **Disabling Specific Services**:
 To disable a specific API service, simply comment out or delete the corresponding API_KEY line in the `.env` file. The system will automatically skip services without configured API keys.
 
-For example, to disable free5:
+Currently disabled services:
+- free5 (iFlow SDK): Service discontinued in March 2026
+- free9 (火山方舟 Coding Plan): Coding Plan expired in March 2026
+
+For example, to disable a service:
 ```properties
 # FREE5_API_KEY=your_iflow_api_key  # Commented out - free5 will not be loaded
 ```

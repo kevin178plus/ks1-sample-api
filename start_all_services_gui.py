@@ -30,7 +30,6 @@ class ServiceManagerGUI:
 
         self.max_lines = 1000
         self.output_buffers = {
-            "free5": [],
             "free8": [],
             "main": []
         }
@@ -47,7 +46,6 @@ class ServiceManagerGUI:
                 self.config = json.load(f)
         else:
             self.config = {
-                "free5": {"auto_start": True},
                 "free8": {"auto_start": True}
             }
             self.save_config()
@@ -73,18 +71,9 @@ class ServiceManagerGUI:
         service_control_frame = ttk.Frame(control_frame)
         service_control_frame.pack(side=tk.LEFT, padx=20)
 
-        self.free5_enabled = tk.BooleanVar(value=self.config.get("free5", {}).get("auto_start", True))
         self.free8_enabled = tk.BooleanVar(value=self.config.get("free8", {}).get("auto_start", True))
 
         ttk.Label(service_control_frame, text="服务控制:").pack(side=tk.LEFT, padx=5)
-
-        free5_check = ttk.Checkbutton(
-            service_control_frame,
-            text="Free5",
-            variable=self.free5_enabled,
-            command=self.on_free5_toggle
-        )
-        free5_check.pack(side=tk.LEFT, padx=5)
 
         free8_check = ttk.Checkbutton(
             service_control_frame,
@@ -97,16 +86,8 @@ class ServiceManagerGUI:
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        self.create_service_tab("free5", "Free5 服务 (端口 5005)")
         self.create_service_tab("free8", "Free8 服务 (端口 5008)")
         self.create_service_tab("main", "主服务 (端口 5000 - 优化版)")
-
-    def on_free5_toggle(self):
-        self.config["free5"] = {"auto_start": self.free5_enabled.get()}
-        self.save_config()
-        
-        if not self.free5_enabled.get() and "free5" in self.processes:
-            self.stop_service("free5")
 
     def on_free8_toggle(self):
         self.config["free8"] = {"auto_start": self.free8_enabled.get()}
@@ -261,18 +242,6 @@ class ServiceManagerGUI:
         script_dir = Path(__file__).parent
         python_path = sys.executable
 
-        if self.free5_enabled.get():
-            self.append_output("free5", "=" * 50, "info")
-            self.append_output("free5", "正在启动 Free5 服务...", "info")
-            free5_cmd = [python_path, "iflow_api_proxy.py"]
-            free5_dir = script_dir / "free_api_test" / "free5"
-            self.start_service("free5", free5_cmd, free5_dir)
-            time.sleep(2)
-        else:
-            self.append_output("free5", "=" * 50, "info")
-            self.append_output("free5", "已禁用，跳过启动", "info")
-            self.update_service_status("free5", "已禁用", "gray")
-
         if self.free8_enabled.get():
             self.append_output("free8", "=" * 50, "info")
             self.append_output("free8", "正在启动 Free8 服务...", "info")
@@ -365,8 +334,6 @@ def main():
     root.protocol("WM_DELETE_WINDOW", app.on_closing)
 
     auto_start_services = []
-    if app.free5_enabled.get():
-        auto_start_services.append("free5")
     if app.free8_enabled.get():
         auto_start_services.append("free8")
 
