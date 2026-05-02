@@ -134,6 +134,10 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 | free6 | CSDN | DeepSeek-V3 | ✅ | 否 |
 | free7 | NVIDIA | nvidia/llama | ✅ | 否 |
 | free8 | Friendli.ai | llama-3.3-70B | ✅ | 独立服务 |
+| free9 | 火山引擎 | ark-code-latest | ⚠️ | 否 |
+| free10 | 阿里云 Qwen | qwen-turbo | ⚠️ | 否 |
+| free11 | OpenAI兼容 | gpt-4o-mini | ⚠️ | 需代理 |
+| free12 | 硅基流动 | Qwen2.5-7B-Instruct | ⚠️ | 否 |
 | free13 | Volcengine | ark-code-latest | ✅ | 否 |
 | free14 | CogView | cgc-apikey | ✅ | 否 |
 | free15 | Groq | llama-3.3-70b | ✅ | **需要** |
