@@ -356,3 +356,32 @@ h1, h2 {
     background-color: #f8d7da;
     color: #721c24;
 }
+
+.btn-test-single {
+    background-color: #17a2b8;
+    color: white;
+    border: none;
+    padding: 4px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.btn-test-single:hover {
+    background-color: #138496;
+}
+
+.btn-test-single:disabled {
+    background-color: #aaa;
+    cursor: not-allowed;
+}
+
+.test-success {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.test-failed {
+    color: #dc3545;
+    font-weight: bold;
+}

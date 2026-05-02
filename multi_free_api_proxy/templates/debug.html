@@ -90,8 +90,12 @@
         <!-- API状态标签页 -->
         <div id="apis-tab" class="tab-content">
             <h2>📡 Free API 状态</h2>
+            <div style="margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+                <button class="refresh-btn" onclick="refreshApis()">🔄 刷新全部状态</button>
+                <button class="refresh-btn" onclick="testAllApis()" style="background-color: #28a745;" id="testAllBtn">▶ 执行全部测试</button>
+                <span id="testAllStatus" style="font-size: 13px; color: #666;"></span>
+            </div>
             <div id="apiList"></div>
-            <button class="refresh-btn" onclick="refreshApis()" style="margin-top: 15px;">刷新API状态</button>
         </div>
         
         <!-- 测试聊天标签页 -->

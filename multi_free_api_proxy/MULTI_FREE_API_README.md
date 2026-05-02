@@ -12,28 +12,34 @@
 ```
 ┌─────────────────────────────────────────┐
 │   主服务 (端口 5000)                     │
-│   - 管理普通 API (free1-free4, free6-9) │
+│   - 管理普通 API (free1-free4, free6-18)│
 │   - 路由特殊 API 到独立服务              │
 │   - 统一的 OpenAI API 接口               │
 └─────────────┬───────────────────────────┘
               │
-              ├──────────────┬──────────────┐
-              │              │              │
-         ┌────▼────┐   ┌────▼────┐   ┌────▼────┐
-         │ free5   │   │ free8   │   │  其他   │
-         │ (5005)  │   │ (5008)  │   │  API    │
-         │ 独立服务│   │ 独立服务│   │  直接调用│
-         └─────────┘   └─────────┘   └─────────┘
+              ├──────────────┐
+              │              │
+         ┌────▼────┐   ┌────▼────┐
+         │ free8   │   │  其他   │
+         │ (5008)  │   │  API    │
+         │ 独立服务│   │  直接调用│
+         └─────────┘   └─────────┘
 ```
 
 ### 独立服务
-- **free5 (端口 5005)**: iflow SDK 服务，提供异步查询能力 ⚠️ **已停用** (2026年3月)
 - **free8 (端口 5008)**: Friendli.ai 服务，支持权重模型选择
 
 ### 已禁用的API
 以下API已停用或过期，配置已在`.env`文件中注释：
-- **free5 (iFlow SDK)**: 服务已于2026年3月停用
+- **free5 (iFlow SDK)**: 服务已于2026年3月停用，已从系统中移除
 - **free9 (火山方舟Coding Plan)**: Coding Plan已于2026年3月过期
+
+### 新增的API (2026年5月)
+以下API已添加到系统中：
+- **free15 (Groq)**: llama-3.3-70b-versatile, 需要代理
+- **free16 (Sambanova)**: DeepSeek-V3.1, 直连
+- **free17 (Cerebras)**: llama3.1-8b, 需要代理
+- **free18 (Google Gemini)**: gemini-3-flash-preview, 需要代理
 
 如需重新启用这些API，请在`.env`文件中取消注释对应的API_KEY配置。
 
@@ -380,7 +386,7 @@ type nul > DEBUG_MODE.txt
 启用调试模式后，访问 `http://localhost:5000/debug` 可以查看Web调试面板，包含:
 
 - **统计信息**: 总调用次数、成功/失败/超时/重试计数
-- **API状态**: 所有Free API的可用状态、成功/失败次数
+- **API状态**: 所有Free API的可用状态、成功/失败次数、最近测试时间和结果，支持单个或全部重新测试
 - **测试聊天**: 直接在页面上测试API功能
 
 #### 统计信息说明
@@ -562,7 +568,7 @@ curl http://localhost:5000/debug/concurrency
 
 #### 步骤
 
-1. **创建API目录**: 在`free_api_test`目录下创建新目录(如`free7`)
+1. **创建API目录**: 在`free_api_test`目录下创建新目录(如`free19`)
 2. **创建config.py**: 在新目录中创建`config.py`文件
 3. **配置环境变量**: 在`.env`文件中添加API密钥
 4. **重启服务**: 重启服务以加载新API
@@ -573,21 +579,18 @@ curl http://localhost:5000/debug/concurrency
 # API配置
 import os
 
-API_KEY = os.getenv("FREE7_API_KEY")
+API_KEY = os.getenv("FREE19_API_KEY")
 BASE_URL = "https://api.example.com"
 MODEL_NAME = "gpt-3.5-turbo"
 USE_PROXY = False  # 是否使用代理
 USE_SDK = False  # 是否使用SDK
+MAX_TOKENS = 2000
+DEFAULT_WEIGHT = 10
 
 # 响应格式配置（可选）
 RESPONSE_FORMAT = {
-    # 内容字段优先级列表（按优先级从高到低）
     "content_fields": ["content"],
-    # 是否需要合并多个字段的内容
     "merge_fields": False,
-    # 字段分隔符（如果需要合并）
-    "field_separator": "\n\n---\n\n",
-    # 是否在 content 为空时使用 reasoning_content
     "use_reasoning_as_fallback": False
 }
 ```
@@ -637,12 +640,12 @@ RESPONSE_FORMAT = {
 
 ```properties
 # 新API的密钥
-FREE7_API_KEY=your_api_key_here
+FREE19_API_KEY=your_api_key_here
 ```
 
 #### 特殊API配置
 
-**使用代理的API** (如free1):
+**使用代理的API** (如free1, free15, free17, free18):
 ```python
 API_KEY = os.getenv("FREE1_API_KEY")
 BASE_URL = "https://openrouter.ai"
@@ -651,7 +654,7 @@ USE_PROXY = True  # 使用代理
 USE_SDK = False
 ```
 
-**使用SDK的API** (如free5):
+**使用SDK的API** (如free5, free17, free18):
 ```python
 API_KEY = os.getenv("FREE5_API_KEY", "iflow-sdk")  # SDK可能不需要密钥
 BASE_URL = "iflow"
@@ -687,7 +690,7 @@ RESPONSE_FORMAT = {
 
 ### 添加普通 HTTP API
 
-1. 在`free_api_test`目录下创建新的子目录（如 `free10`）
+1. 在`free_api_test`目录下创建新的子目录（如 `free19`）
 2. 创建 `config.py` 文件，配置 API 信息
 3. 创建 `test_api.py` 文件，用于测试 API
 4. 在 `.env` 文件中添加对应的 API_KEY
@@ -806,6 +809,89 @@ RESPONSE_FORMAT = {
   - 实际内容在 `reasoning_content` 字段中（这是模型的思考过程）
   - 已配置 RESPONSE_FORMAT 来正确处理这种情况
   - 建议根据问题复杂度调整 max_tokens 参数（简单问题 1024-2048，复杂问题 4096-8192）
+
+### free8 - Friendli.ai API
+- **Base URL**: https://api.friendli.ai/serverless/v1
+- **Model**: meta-llama/Llama-3.3-70B-Instruct
+- **Use Proxy**: 否
+- **Use SDK**: 否
+- **配置**: FREE8_API_KEY
+- **状态**: 独立服务 (端口 5008)
+
+### free10 - API 10
+- **Base URL**: Unknown
+- **Model**: Various
+- **Use Proxy**: 否
+- **配置**: FREE10_API_KEY
+
+### free11 - API 11
+- **Base URL**: Unknown
+- **Model**: Various
+- **Use Proxy**: 否
+- **配置**: FREE11_API_KEY
+
+### free12 - API 12
+- **Base URL**: Unknown
+- **Model**: Various
+- **Use Proxy**: 否
+- **配置**: FREE12_API_KEY
+
+### free13 - Volcengine API
+- **Base URL**: https://ark.cn-beijing.volces.com/api/coding
+- **Model**: ark-code-latest
+- **Use Proxy**: 否
+- **配置**: FREE13_API_KEY
+
+### free14 - CogView API
+- **Base URL**: https://cogview.api
+- **Model**: cgc-apikey
+- **Use Proxy**: 否
+- **配置**: FREE14_API_KEY
+
+### free15 - Groq API ⚡
+- **Base URL**: https://api.groq.com/openai/v1
+- **Model**: llama-3.3-70b-versatile
+- **Use Proxy**: 是 (127.0.0.1:7897)
+- **Use SDK**: 否
+- **配置**: GROQ_API_KEY
+- **特殊说明**: 
+  - 超快的 LLM 推理服务
+  - 需要通过 HTTP 代理访问
+  - 支持多种 Llama 模型
+
+### free16 - Sambanova API ⚡
+- **Base URL**: https://api.sambanova.ai/v1
+- **Model**: DeepSeek-V3.1
+- **Use Proxy**: 否
+- **Use SDK**: 否
+- **配置**: SAMBANOVA_API_KEY
+- **特殊说明**: 
+  - 高性能 LLM 服务
+  - 支持 DeepSeek 和 Llama 系列模型
+
+### free17 - Cerebras API ⚡
+- **Base URL**: https://api.cerebras.ai/v1
+- **Model**: llama3.1-8b
+- **Use Proxy**: 是 (127.0.0.1:7897)
+- **Use SDK**: 是
+- **配置**: CEREBRAS_API_KEY
+- **依赖**: cerebras-cloud-sdk
+- **特殊说明**: 
+  - 基于 Cerebras Wafer-Scale Engine 的快速推理
+  - 需要通过 HTTP 代理访问
+  - 支持 Llama 和 GPT 系列模型
+
+### free18 - Google Gemini API ⚡
+- **Base URL**: https://generativelanguage.googleapis.com/v1beta
+- **Model**: gemini-3-flash-preview
+- **Use Proxy**: 是 (127.0.0.1:7897)
+- **Use SDK**: 是
+- **配置**: GEMINI_API_KEY
+- **依赖**: google-genai
+- **特殊说明**: 
+  - Google 先进的多模态 AI 模型
+  - 需要通过 HTTP 代理访问
+  - 支持多种 Gemini 模型
 
 ## 常见问题
 

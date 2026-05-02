@@ -70,20 +70,40 @@ function refreshApis() {
         .then(data => {
             const apiListDiv = document.getElementById('apiList');
             apiListDiv.innerHTML = '';
-            
+
             const apis = data.free_apis || {};
             const availableApis = data.available_apis || [];
-            
-            for (const [name, config] of Object.entries(apis)) {
+
+            for (const [name, cfg] of Object.entries(apis)) {
                 const isAvailable = availableApis.includes(name);
+                const testTime = cfg.last_test_time
+                    ? new Date(cfg.last_test_time).toLocaleString()
+                    : '从未测试';
+                const testResult = cfg.last_test_result || '-';
+                const resultClass = testResult === 'success' ? 'test-success'
+                    : testResult === '-' ? '' : 'test-failed';
+
                 const div = document.createElement('div');
                 div.className = 'api-status ' + (isAvailable ? 'available' : 'unavailable');
+                div.id = 'api-card-' + name;
                 div.innerHTML = `
-                    <strong>${name}</strong>
-                    <span style="float: right;">${isAvailable ? '✅ 可用' : '❌ 不可用'}</span>
-                    <br><small>模型: ${config.model || 'gpt-3.5-turbo'}</small>
-                    <br><small>成功: ${config.success_count || 0} | 失败: ${config.failure_count || 0}</small>
-                    ${config.last_test_result ? '<br><small>最后测试: ' + config.last_test_result + '</small>' : ''}
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <strong>${name}</strong>
+                        <span>${isAvailable ? '✅ 可用' : '❌ 不可用'}</span>
+                    </div>
+                    <div style="margin-top:6px; font-size:13px; color:#555;">
+                        模型: ${cfg.model || 'gpt-3.5-turbo'} &nbsp;|&nbsp;
+                        成功: ${cfg.success_count || 0} &nbsp;|&nbsp; 失败: ${cfg.failure_count || 0}
+                    </div>
+                    <div style="margin-top:4px; font-size:12px; color:#777;">
+                        最近测试/执行: <span style="color:#333;">${testTime}</span>
+                        &nbsp;&mdash;&nbsp;
+                        结果: <span class="${resultClass}">${testResult}</span>
+                    </div>
+                    <div style="margin-top:8px;">
+                        <button class="btn-test-single" onclick="testSingleApi('${name}')" id="testBtn-${name}">▶ 测试</button>
+                        <span id="testStatus-${name}" style="font-size:12px; color:#666; margin-left:8px;"></span>
+                    </div>
                 `;
                 apiListDiv.appendChild(div);
             }
@@ -92,6 +112,69 @@ function refreshApis() {
             console.error('Error:', error);
             document.getElementById('apiList').innerHTML = '<p style="color: red;">获取API状态失败</p>';
         });
+}
+
+function testSingleApi(apiName) {
+    const btn = document.getElementById('testBtn-' + apiName);
+    const status = document.getElementById('testStatus-' + apiName);
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    status.textContent = '';
+
+    fetch('/debug/api/test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({api_name: apiName})
+    })
+    .then(r => r.json())
+    .then(data => {
+        const testTime = data.last_test_time
+            ? new Date(data.last_test_time).toLocaleString()
+            : '-';
+        const result = data.last_test_result || '-';
+        const resultClass = result === 'success' ? 'test-success' : 'test-failed';
+
+        // 更新卡片内容
+        const card = document.getElementById('api-card-' + apiName);
+        if (card) {
+            card.className = 'api-status ' + (data.available ? 'available' : 'unavailable');
+            card.querySelector('span:last-of-type') // 不可靠，直接刷新整个列表
+            refreshApis();
+        }
+        status.innerHTML = `<span class="${resultClass}">${result}</span> @ ${testTime}`;
+    })
+    .catch(err => {
+        status.textContent = '请求失败: ' + err;
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '▶ 测试';
+    });
+}
+
+function testAllApis() {
+    const btn = document.getElementById('testAllBtn');
+    const statusEl = document.getElementById('testAllStatus');
+    btn.disabled = true;
+    btn.textContent = '测试中...';
+    statusEl.textContent = '正在测试所有 API，请稍候...';
+
+    fetch('/debug/api/test/all', {method: 'POST', headers: {'Content-Type': 'application/json'}})
+    .then(r => r.json())
+    .then(data => {
+        const results = data.results || {};
+        const successCount = Object.values(results).filter(r => r.success).length;
+        const total = Object.keys(results).length;
+        statusEl.textContent = `完成: ${successCount}/${total} 可用`;
+        refreshApis();
+    })
+    .catch(err => {
+        statusEl.textContent = '测试失败: ' + err;
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = '▶ 执行全部测试';
+    });
 }
 
 function addMessage(role, content, latency = null, error = false) {
