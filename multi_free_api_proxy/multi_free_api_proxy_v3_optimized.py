@@ -21,7 +21,7 @@ from watchdog.events import FileSystemEventHandler
 # 导入本地模块
 from config import get_config
 from app_state import AppState
-from errors import ErrorType, APIError, TimeoutError, UpstreamError, ConcurrentLimitError, NoAvailableAPIError
+from errors import ErrorType, APIError, TimeoutError, UpstreamError, ConcurrentLimitError, NoAvailableAPIError, FormatError
 
 # 初始化配置和状态
 config = get_config()
@@ -220,14 +220,21 @@ def test_api_startup(api_name):
 
         try:
             response = requests.get(service_url, timeout=5)
+            api_config["last_test_time"] = datetime.now().isoformat()
             if response.status_code == 200:
                 api_config["available"] = True
                 api_config["last_test_result"] = "success"
                 api_config["success_count"] += 1
                 print(f"[启动测试] {api_name} 独立服务可用")
                 return True
+            else:
+                api_config["available"] = False
+                api_config["last_test_result"] = f"failed: {response.status_code}"
+                api_config["failure_count"] += 1
+                return False
         except Exception as e:
             api_config["available"] = False
+            api_config["last_test_time"] = datetime.now().isoformat()
             api_config["last_test_result"] = f"error: {str(e)}"
             api_config["failure_count"] += 1
             print(f"[启动测试] {api_name} 独立服务测试失败: {e}")
@@ -255,6 +262,7 @@ def test_api_startup(api_name):
         }
 
         response = requests.post(url, headers=headers, json=payload, proxies=proxies, timeout=30)
+        api_config["last_test_time"] = datetime.now().isoformat()
 
         if response.status_code == 200:
             api_config["available"] = True
@@ -270,6 +278,7 @@ def test_api_startup(api_name):
             return False
     except Exception as e:
         api_config["available"] = False
+        api_config["last_test_time"] = datetime.now().isoformat()
         api_config["last_test_result"] = f"error: {str(e)}"
         api_config["failure_count"] += 1
         print(f"[启动测试] {api_name} 测试失败: {e}")
@@ -436,8 +445,20 @@ def chat_completions():
 
         print(f"[请求] 收到请求 (ID: {message_id})")
 
-        # 执行请求
-        result, retry_count, used_api_name = execute_with_free_api(data, message_id)
+        try:
+            result, retry_count, used_api_name = execute_with_free_api(data, message_id)
+        except NoAvailableAPIError as e:
+            print(f"[错误] 没有可用的上游API: {str(e)}")
+            available_apis = app_state.get_available_apis()
+            all_apis = list(app_state.get_all_apis().keys())
+            return jsonify({
+                "error": {
+                    "message": "All upstream APIs are unavailable. Please try again later.",
+                    "type": "upstream_unavailable",
+                    "available_count": len(available_apis),
+                    "total_count": len(all_apis)
+                }
+            }), 503
 
         print(f"[请求] 请求成功 (ID: {message_id}, API: {used_api_name}, 重试: {retry_count})")
         
@@ -452,7 +473,28 @@ def chat_completions():
         print(f"[请求] 超时: {str(e)}")
         app_state.set_error(ErrorType.TIMEOUT.value, str(e))
         update_call_stats(success=False, is_timeout=True)
-        return jsonify({"error": "Request timeout"}), 504
+        return jsonify({
+            "error": {
+                "message": "Request timeout, please try again",
+                "type": "timeout"
+            }
+        }), 504
+
+    except FormatError as e:
+        print(f"[请求] 格式错误（所有上游API均失败）: {str(e)}")
+        app_state.set_error(ErrorType.API_ERROR.value, str(e))
+        update_call_stats(success=False)
+        available_apis = app_state.get_available_apis()
+        all_apis = list(app_state.get_all_apis().keys())
+        return jsonify({
+            "error": {
+                "message": "All upstream APIs returned invalid responses. Please try again later.",
+                "type": "invalid_response",
+                "details": str(e),
+                "available_count": len(available_apis),
+                "total_count": len(all_apis)
+            }
+        }), 502
 
     except Exception as e:
         print(f"[错误] 请求失败: {str(e)}")
@@ -678,6 +720,86 @@ def reset_api_weights():
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
+@app.route('/debug/api/test', methods=['POST'])
+def test_single_api():
+    """测试单个 API 的连通性"""
+    try:
+        data = request.get_json()
+        api_name = data.get('api_name')
+
+        if not api_name or api_name not in app_state.get_all_apis():
+            return jsonify({"success": False, "error": "Invalid API name"}), 400
+
+        result = test_api_startup(api_name)
+        api_config = app_state.get_api(api_name)
+
+        if result:
+            app_state.add_available_api(api_name)
+
+        return jsonify({
+            "success": result,
+            "api_name": api_name,
+            "last_test_time": api_config.get("last_test_time"),
+            "last_test_result": api_config.get("last_test_result"),
+            "available": api_config.get("available", False)
+        })
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/debug/api/test/all', methods=['POST'])
+def test_all_apis():
+    """测试所有 API 的连通性"""
+    try:
+        results = {}
+        for api_name in app_state.get_all_apis():
+            result = test_api_startup(api_name)
+            api_config = app_state.get_api(api_name)
+            if result:
+                app_state.add_available_api(api_name)
+            results[api_name] = {
+                "success": result,
+                "last_test_time": api_config.get("last_test_time"),
+                "last_test_result": api_config.get("last_test_result"),
+                "available": api_config.get("available", False)
+            }
+        return jsonify({"success": True, "results": results})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+def validate_response(result, api_name):
+    """
+    验证上游响应是否有效
+    返回: (is_valid, error_message)
+    """
+    if not isinstance(result, dict):
+        return False, f"Response is not a dictionary: {type(result)}"
+    
+    if "error" in result:
+        error_info = result["error"]
+        if isinstance(error_info, dict):
+            error_msg = error_info.get("message", str(error_info))
+        else:
+            error_msg = str(error_info)
+        return False, f"上游返回错误: {error_msg}"
+    
+    if "choices" not in result:
+        return False, "响应缺少 choices 字段"
+    
+    choices = result.get("choices", [])
+    if not choices or len(choices) == 0:
+        return False, "响应 choices 为空"
+    
+    first_choice = choices[0]
+    if "message" not in first_choice:
+        return False, "响应缺少 message 字段"
+    
+    message = first_choice.get("message", {})
+    if "content" not in message and "reasoning_content" not in message:
+        return False, "响应 message 缺少 content 和 reasoning_content"
+    
+    return True, None
+
+
 def execute_with_free_api(data, message_id):
     """使用Free API执行请求"""
     retry_count = 0
@@ -739,11 +861,17 @@ def execute_with_free_api(data, message_id):
                 except json.JSONDecodeError as e:
                     print(f"[错误] {api_name} JSON解析失败: {str(e)}")
                     print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
-                    # 将 API 加入黑名单，快速切换
                     app_state.mark_api_failed_temporarily(api_name)
-                    # 大幅降低权重
                     decrease_api_weight(api_name, reduction=50)
                     raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
+
+                is_valid, error_msg = validate_response(result, api_name)
+                if not is_valid:
+                    print(f"[错误] {api_name} 响应验证失败: {error_msg}")
+                    print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                    app_state.mark_api_failed_temporarily(api_name)
+                    decrease_api_weight(api_name, reduction=50)
+                    raise FormatError(f"Invalid response from {api_name}: {error_msg}")
 
                 print(f"[请求] {api_name} 独立服务成功")
 
@@ -830,11 +958,17 @@ def execute_with_free_api(data, message_id):
             except json.JSONDecodeError as e:
                 print(f"[错误] {api_name} JSON解析失败: {str(e)}")
                 print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
-                # 将 API 加入黑名单，快速切换
                 app_state.mark_api_failed_temporarily(api_name)
-                # 大幅降低权重
                 decrease_api_weight(api_name, reduction=50)
                 raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
+
+            is_valid, error_msg = validate_response(result, api_name)
+            if not is_valid:
+                print(f"[错误] {api_name} 响应验证失败: {error_msg}")
+                print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                app_state.mark_api_failed_temporarily(api_name)
+                decrease_api_weight(api_name, reduction=50)
+                raise FormatError(f"Invalid response from {api_name}: {error_msg}")
 
             used_model = api_config.get("model", "unknown")
             app_state.set_last_used_model(api_name, used_model)
