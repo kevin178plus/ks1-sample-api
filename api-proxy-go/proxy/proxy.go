@@ -282,19 +282,38 @@ func (p *Proxy) executeHTTPRequest(ctx context.Context, upstreamService *upstrea
 	// 解析响应
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parse response failed: %w", err)
+		return nil, fmt.Errorf("parse response failed: %w (response: %s)", err, string(respBody[:min(len(respBody), 500)]))
+	}
+
+	// 检查响应是否包含错误
+	if errMsg, hasError := result["error"]; hasError {
+		errStr := ""
+		if errMap, ok := errMsg.(map[string]interface{}); ok {
+			if msg, ok := errMap["message"].(string); ok {
+				errStr = msg
+			}
+		}
+		return nil, fmt.Errorf("upstream returned error: %s", errStr)
+	}
+
+	// 验证响应格式（与Python版本的validate_response类似）
+	content, err := upstream.ParseResponseContent(result, &cfg.ResponseFormat)
+	if err != nil {
+		return nil, fmt.Errorf("invalid response format: %w (result: %s)", err, string(respBody[:min(len(respBody), 500)]))
+	}
+
+	// 如果解析后content为空，说明响应没有有效内容
+	if content == "" || content == "{}" {
+		return nil, fmt.Errorf("empty response content")
 	}
 
 	// 处理响应内容（根据响应格式配置）
-	if cfg.ResponseFormat.ContentFields != nil {
-		content, err := upstream.ParseResponseContent(result, &cfg.ResponseFormat)
-		if err == nil && content != "" {
-			// 更新 content 字段
-			if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
-				if choice, ok := choices[0].(map[string]interface{}); ok {
-					if message, ok := choice["message"].(map[string]interface{}); ok {
-						message["content"] = content
-					}
+	if cfg.ResponseFormat.ContentFields != nil && content != "" {
+		// 更新 content 字段
+		if choices, ok := result["choices"].([]interface{}); ok && len(choices) > 0 {
+			if choice, ok := choices[0].(map[string]interface{}); ok {
+				if message, ok := choice["message"].(map[string]interface{}); ok {
+					message["content"] = content
 				}
 			}
 		}
