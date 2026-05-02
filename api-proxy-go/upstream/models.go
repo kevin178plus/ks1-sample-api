@@ -34,6 +34,7 @@ func (ms *ModelSelector) GetModel(upstreamName string) string {
 // ListModels 列出所有可用模型
 func (ms *ModelSelector) ListModels() []ModelInfo {
 	models := make([]ModelInfo, 0)
+	seenModels := make(map[string]bool)
 
 	upstreams := ms.manager.GetAll()
 	for name, upstream := range upstreams {
@@ -42,19 +43,25 @@ func (ms *ModelSelector) ListModels() []ModelInfo {
 		// 如果有多模型列表
 		if len(cfg.AvailableModels) > 0 {
 			for _, model := range cfg.AvailableModels {
+				if !seenModels[model] {
+					seenModels[model] = true
+					models = append(models, ModelInfo{
+						ID:       model,
+						Name:     model,
+						Upstream: name,
+					})
+				}
+			}
+		} else if cfg.Model != "" {
+			// 使用默认模型（已去重）
+			if !seenModels[cfg.Model] {
+				seenModels[cfg.Model] = true
 				models = append(models, ModelInfo{
-					ID:       model,
-					Name:     model,
+					ID:       cfg.Model,
+					Name:     cfg.Model,
 					Upstream: name,
 				})
 			}
-		} else if cfg.Model != "" {
-			// 使用默认模型
-			models = append(models, ModelInfo{
-				ID:       cfg.Model,
-				Name:     cfg.Model,
-				Upstream: name,
-			})
 		}
 	}
 
