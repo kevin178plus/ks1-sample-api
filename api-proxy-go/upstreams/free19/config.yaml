@@ -1,7 +1,7 @@
 name: "free19"
 address: "https://api.cohere.com/v2"
-api_key: "${COHERE_API_KEY}"
-enabled: false
+api_key: ""  # 从环境变量 COHERE_API_KEY 加载
+enabled: true
 default_weight: 50
 
 limit:

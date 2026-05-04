@@ -1,7 +1,7 @@
 name: "free6"
 address: "https://models.csdn.net"
-api_key: "sk-cruejfllcdsrujoe"
-enabled: false
+api_key: ""  # 从环境变量 FREE6_API_KEY 加载
+enabled: true
 default_weight: 10
 
 # 限额配置（根据实际情况调整）

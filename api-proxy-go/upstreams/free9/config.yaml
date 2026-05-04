@@ -1,0 +1,29 @@
+name: "free9"
+address: "https://ark.cn-beijing.volces.com/api/coding"
+api_key: ""
+enabled: false
+default_weight: 10
+
+# 火山 Coding Plan 已于 2026年3月过期，启用需配置 API Key
+limit:
+  hourly: 100
+  daily: 500
+  monthly: 5000
+
+thresholds:
+  warning: 80
+  critical: 95
+
+use_proxy: false
+use_sdk: false
+
+model: "ark-code-latest"
+available_models: []
+use_weighted_model: false
+
+response_format:
+  content_fields: ['content']
+  merge_fields: false
+  use_reasoning_as_fallback: false
+
+max_tokens: 8192

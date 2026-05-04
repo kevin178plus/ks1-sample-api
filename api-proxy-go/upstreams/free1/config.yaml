@@ -1,6 +1,6 @@
 name: "free1"
 address: "https://openrouter.ai/api"
-api_key: "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"
+api_key: ""  # 从环境变量 OPENROUTER_API_KEY 加载
 enabled: true
 default_weight: 120
 

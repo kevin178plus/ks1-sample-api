@@ -1,6 +1,6 @@
 name: "free16"
 address: "https://api.sambanova.ai/v1"
-api_key: "${SAMBANOVA_API_KEY}"
+api_key: ""  # 从环境变量 SAMBANOVA_API_KEY 加载
 enabled: true
 default_weight: 80
 

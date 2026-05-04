@@ -1,7 +1,7 @@
 name: "free18"
 address: "https://generativelanguage.googleapis.com/v1beta/openai/"
-api_key: "${GEMINI_API_KEY}"
-enabled: false
+api_key: ""  # 从环境变量 GEMINI_API_KEY 加载
+enabled: true
 default_weight: 60
 
 limit:

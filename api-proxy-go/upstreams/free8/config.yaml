@@ -1,7 +1,7 @@
 name: "free8"
 address: "https://api.friendli.ai/serverless/v1"
-api_key: "None"
-enabled: false
+api_key: ""  # 从环境变量 FREE8_API_KEY 加载 (独立服务)
+enabled: true
 default_weight: 10
 
 # 限额配置（根据实际情况调整）

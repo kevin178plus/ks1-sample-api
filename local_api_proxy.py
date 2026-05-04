@@ -412,16 +412,57 @@ def chat_completions():
 @app.route('/v1/models', methods=['GET'])
 def list_models():
     """列出可用模型"""
+    import glob
+    import importlib.util
+    import re
+    
+    models = []
+    seen_models = set()
+    
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    config_dir = os.path.join(base_dir, "free_api_test")
+    
+    free_api_dirs = glob.glob(os.path.join(config_dir, "free*"))
+    
+    for free_dir in free_api_dirs:
+        dir_name = os.path.basename(free_dir)
+        if dir_name.startswith("_"):
+            continue
+        
+        config_file = os.path.join(free_dir, "config.py")
+        if not os.path.isfile(config_file):
+            continue
+        
+        try:
+            spec = importlib.util.spec_from_file_location(f"config_{dir_name}", config_file)
+            config_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_module)
+            
+            api_key = config_module.API_KEY
+            if not api_key:
+                continue
+            
+            model_name = getattr(config_module, "MODEL_NAME", None)
+            if not model_name:
+                continue
+            
+            title_name = getattr(config_module, "TITLE_NAME", dir_name)
+            
+            if model_name not in seen_models:
+                seen_models.add(model_name)
+                models.append({
+                    "id": model_name,
+                    "object": "model",
+                    "owned_by": title_name
+                })
+        
+        except Exception as e:
+            print(f"[警告] 加载 {dir_name} 配置失败: {e}")
+            continue
+    
     return jsonify({
         "object": "list",
-        "data": [
-            {
-                "id": "openrouter/free",
-                "object": "model",
-                "owned_by": "openrouter",
-                "permission": []
-            }
-        ]
+        "data": models
     })
 
 @app.route('/health', methods=['GET'])

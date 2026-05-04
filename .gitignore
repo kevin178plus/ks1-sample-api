@@ -9,3 +9,4 @@ __pycache__/
 test_result.txt
 *.exe
 *.zip
+/multi_free_api_proxy/*.env

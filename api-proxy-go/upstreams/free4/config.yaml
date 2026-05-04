@@ -1,6 +1,6 @@
 name: "free4"
 address: "https://api.mistral.ai"
-api_key: "cSWSvxhzAoFaW3DP41Zsnh7Eb3iEGNas"
+api_key: ""  # 从环境变量 FREE4_API_KEY 加载
 enabled: true
 default_weight: 5
 

@@ -1,6 +1,6 @@
 name: "free3"
 address: "https://free.v36.cm"
-api_key: "REVOKED_KEY"
+api_key: ""  # 从环境变量 FREE3_API_KEY 加载
 enabled: true
 default_weight: 10
 
