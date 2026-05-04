@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -32,6 +34,9 @@ func main() {
 	flag.Parse()
 
 	log.Printf("[启动] API 代理 v%s", version)
+
+	// 加载 .env 文件（如果存在）
+	loadEnvFile()
 
 	// 加载配置
 	cfg, err := config.Load(*configPath)
@@ -222,6 +227,83 @@ func triggerGracefulRestart() {
 // Windows 服务支持（简化版本）
 // 完整的 Windows 服务支持需要使用 golang.org/x/sys/windows/svc
 // 这里提供基本框架
+
+// loadEnvFile 加载 .env 文件（支持项目根目录和当前目录）
+func loadEnvFile() {
+	// 尝试多个可能的 .env 文件位置
+	envPaths := []string{
+		".env",
+		"../.env",
+		os.Getenv("GOPATH") + "/src/github.com/kevin178plus/api-proxy-go/.env",
+	}
+
+	for _, envPath := range envPaths {
+		if _, err := os.Stat(envPath); err == nil {
+			log.Printf("[配置] 加载环境变量: %s", envPath)
+			loadEnv(envPath)
+			return
+		}
+	}
+
+	// 如果没有 .env 文件，尝试从项目根目录加载
+	projectRoot := ".env"
+	if _, err := os.Stat(projectRoot); err == nil {
+		loadEnv(projectRoot)
+	}
+}
+
+// loadEnv 解析 .env 文件并设置环境变量
+func loadEnv(path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		log.Printf("[警告] 打开环境变量文件失败: %v", err)
+		return
+	}
+	defer file.Close()
+
+	lineNum := 0
+	skipped := 0
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lineNum++
+		line := strings.TrimSpace(scanner.Text())
+
+		// 跳过空行和注释
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// 解析 KEY=VALUE 格式
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			log.Printf("[警告] 第 %d 行格式错误: %s", lineNum, line)
+			skipped++
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+
+		// 跳过 PORT 等配置（这些在 config.yaml 中配置）
+		if key == "PORT" || key == "CACHE_DIR" || key == "HTTP_PROXY" || key == "MAX_CONCURRENT_REQUESTS" {
+			continue
+		}
+
+		// 跳过 FREE1_API_KEY（free1 使用 OPENROUTER_API_KEY）
+		if key == "FREE1_API_KEY" {
+			continue
+		}
+
+		os.Setenv(key, value)
+	}
+
+	if err := scanner.Err(); err != nil {
+		log.Printf("[警告] 读取环境变量文件失败: %v", err)
+	}
+
+	log.Printf("[配置] 已加载 %d 个环境变量 (跳过 %d 个)", lineNum-skipped, skipped)
+}
 
 /*
 type service struct {

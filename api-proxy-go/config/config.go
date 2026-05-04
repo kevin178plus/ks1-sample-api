@@ -2,8 +2,10 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -102,7 +104,66 @@ func LoadUpstreamConfig(path string) (*UpstreamConfig, error) {
 		cfg.Thresholds.Critical = 95
 	}
 
+	// 从环境变量加载 API Key
+	loadAPIKeyFromEnv(cfg)
+
 	return cfg, nil
+}
+
+// loadAPIKeyFromEnv 从环境变量加载 API Key
+// 支持的环境变量格式：
+//   - FREE1_API_KEY, FREE2_API_KEY, ... (通用)
+//   - OPENROUTER_API_KEY (free1)
+//   - GROQ_API_KEY (free15)
+//   - SAMBANOVA_API_KEY (free16)
+//   - CEREBRAS_API_KEY (free17)
+//   - GEMINI_API_KEY (free18)
+//   - NVIDIA_API_KEY (free7)
+func loadAPIKeyFromEnv(cfg *UpstreamConfig) {
+	if cfg.APIKey != "" {
+		// 如果 YAML 中已有 API Key，优先使用
+		return
+	}
+
+	name := cfg.Name
+	if name == "" {
+		return
+	}
+
+	// 映射表：上游名称 -> 环境变量名
+	envVars := map[string]string{
+		"free1":  "OPENROUTER_API_KEY", // OpenRouter
+		"free2":  "FREE2_API_KEY",
+		"free3":  "FREE3_API_KEY",
+		"free4":  "FREE4_API_KEY",
+		"free5":  "FREE5_API_KEY", // iFlow SDK (已停用)
+		"free6":  "FREE6_API_KEY",
+		"free7":  "NVIDIA_API_KEY", // NVIDIA
+		"free8":  "FREE8_API_KEY", // Friendli
+		"free9":  "FREE9_API_KEY", // 火山方舟 (已过期)
+		"free10": "FREE10_API_KEY",
+		"free11": "FREE11_API_KEY",
+		"free12": "FREE12_API_KEY",
+		"free13": "FREE13_API_KEY",
+		"free14": "FREE14_API_KEY",
+		"free15": "GROQ_API_KEY", // Groq
+		"free16": "SAMBANOVA_API_KEY", // Sambanova
+		"free17": "CEREBRAS_API_KEY", // Cerebras
+		"free18": "GEMINI_API_KEY", // Google Gemini
+		"free19": "COHERE_API_KEY", // Cohere
+		"free20": "LONGCAT_API_KEY", // LongCat API
+	}
+
+	envKey, exists := envVars[name]
+	if !exists {
+		// 尝试通用格式 FREE{N}_API_KEY
+		envKey = strings.ToUpper(name) + "_API_KEY"
+	}
+
+	if apiKey := os.Getenv(envKey); apiKey != "" {
+		cfg.APIKey = apiKey
+		log.Printf("[配置] %s: 从环境变量 %s 加载 API Key", name, envKey)
+	}
 }
 
 // DiscoverUpstreams 扫描上游配置目录
