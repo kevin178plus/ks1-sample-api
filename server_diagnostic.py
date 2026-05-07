@@ -60,11 +60,11 @@ class ServerDiagnostic:
                     print(f"总内存: {memory_mb} MB")
                     
                     if memory_mb < 2048:
-                        print("⚠️  警告：内存不足2GB，可能影响性能")
+                        print("[WARN]  警告：内存不足2GB，可能影响性能")
                     else:
-                        print("✅ 内存充足")
+                        print("[OK] 内存充足")
         except Exception as e:
-            print(f"⚠️  无法获取内存信息: {e}")
+            print(f"[WARN]  无法获取内存信息: {e}")
         
         print()
     
@@ -84,9 +84,9 @@ class ServerDiagnostic:
         # 检查Python版本
         major, minor = sys.version_info[:2]
         if major == 3 and minor >= 7:
-            print("✅ Python版本符合要求（3.7+）")
+            print("[OK] Python版本符合要求（3.7+）")
         else:
-            print("❌ Python版本过低，建议使用3.7+")
+            print("[FAIL] Python版本过低，建议使用3.7+")
         
         # 检查pip
         try:
@@ -96,9 +96,9 @@ class ServerDiagnostic:
                 check=True,
                 timeout=10
             )
-            print("✅ pip可用")
+            print("[OK] pip可用")
         except Exception as e:
-            print(f"❌ pip不可用: {e}")
+            print(f"[FAIL] pip不可用: {e}")
         
         print()
     
@@ -117,10 +117,10 @@ class ServerDiagnostic:
         for module_name, display_name in required_packages.items():
             try:
                 __import__(module_name)
-                print(f"✅ {display_name} 已安装")
+                print(f"[OK] {display_name} 已安装")
                 self.results["dependencies"][module_name] = True
             except ImportError:
-                print(f"❌ {display_name} 未安装")
+                print(f"[FAIL] {display_name} 未安装")
                 self.results["dependencies"][module_name] = False
                 # 尝试安装
                 try:
@@ -131,10 +131,10 @@ class ServerDiagnostic:
                         check=True,
                         timeout=60
                     )
-                    print(f"   ✅ {display_name} 安装成功")
+                    print(f"   [OK] {display_name} 安装成功")
                     self.results["dependencies"][module_name] = True
                 except Exception as e:
-                    print(f"   ❌ {display_name} 安装失败: {e}")
+                    print(f"   [FAIL] {display_name} 安装失败: {e}")
         
         print()
     
@@ -147,7 +147,7 @@ class ServerDiagnostic:
         # 检查.env文件
         env_file = self.script_dir / ".env"
         if env_file.exists():
-            print("✅ .env文件存在")
+            print("[OK] .env文件存在")
             self.results["configuration"]["env_file"] = True
             
             # 检查API密钥
@@ -155,15 +155,15 @@ class ServerDiagnostic:
                 with open(env_file, 'r', encoding='utf-8') as f:
                     content = f.read()
                     if 'OPENROUTER_API_KEY' in content:
-                        print("✅ OPENROUTER_API_KEY已配置")
+                        print("[OK] OPENROUTER_API_KEY已配置")
                         self.results["configuration"]["api_key"] = True
                     else:
-                        print("❌ OPENROUTER_API_KEY未配置")
+                        print("[FAIL] OPENROUTER_API_KEY未配置")
                         self.results["configuration"]["api_key"] = False
             except Exception as e:
-                print(f"❌ 读取.env文件失败: {e}")
+                print(f"[FAIL] 读取.env文件失败: {e}")
         else:
-            print("❌ .env文件不存在")
+            print("[FAIL] .env文件不存在")
             self.results["configuration"]["env_file"] = False
             self.results["configuration"]["api_key"] = False
         
@@ -171,13 +171,13 @@ class ServerDiagnostic:
         cache_dir = os.getenv('CACHE_DIR', 'R:\\api_proxy_cache')
         try:
             if os.path.exists(cache_dir):
-                print(f"✅ 缓存目录存在: {cache_dir}")
+                print(f"[OK] 缓存目录存在: {cache_dir}")
                 self.results["configuration"]["cache_dir"] = True
             else:
-                print(f"⚠️  缓存目录不存在: {cache_dir}")
+                print(f"[WARN]  缓存目录不存在: {cache_dir}")
                 self.results["configuration"]["cache_dir"] = False
         except Exception as e:
-            print(f"⚠️  无法检查缓存目录: {e}")
+            print(f"[WARN]  无法检查缓存目录: {e}")
         
         print()
     
@@ -195,10 +195,10 @@ class ServerDiagnostic:
         sock.close()
         
         if result == 0:
-            print(f"⚠️  端口{port}已被占用")
+            print(f"[WARN]  端口{port}已被占用")
             self.results["network"]["port_5000"] = "occupied"
         else:
-            print(f"✅ 端口{port}空闲")
+            print(f"[OK] 端口{port}空闲")
             self.results["network"]["port_5000"] = "free"
         
         # 检查网络连接
@@ -206,13 +206,13 @@ class ServerDiagnostic:
             import requests
             response = requests.get('https://www.google.com', timeout=10)
             if response.status_code == 200:
-                print("✅ 网络连接正常")
+                print("[OK] 网络连接正常")
                 self.results["network"]["internet"] = True
             else:
-                print("⚠️  网络连接异常")
+                print("[WARN]  网络连接异常")
                 self.results["network"]["internet"] = False
         except Exception as e:
-            print(f"⚠️  网络连接检查失败: {e}")
+            print(f"[WARN]  网络连接检查失败: {e}")
             self.results["network"]["internet"] = False
         
         print()
@@ -234,10 +234,10 @@ class ServerDiagnostic:
         for filename in required_files:
             file_path = self.win2012_dir / filename
             if file_path.exists():
-                print(f"✅ {filename} 存在")
+                print(f"[OK] {filename} 存在")
                 self.results["service"][filename] = True
             else:
-                print(f"❌ {filename} 不存在")
+                print(f"[FAIL] {filename} 不存在")
                 self.results["service"][filename] = False
         
         print()
@@ -250,7 +250,7 @@ class ServerDiagnostic:
         
         proxy_script = self.win2012_dir / "minimal_server_proxy.py"
         if not proxy_script.exists():
-            print("❌ minimal_server_proxy.py 不存在，无法测试")
+            print("[FAIL] minimal_server_proxy.py 不存在，无法测试")
             return
         
         print("正在启动服务...")
@@ -274,7 +274,7 @@ class ServerDiagnostic:
             sock.close()
             
             if result == 0:
-                print("✅ 服务启动成功，端口5000已监听")
+                print("[OK] 服务启动成功，端口5000已监听")
                 self.results["service"]["startup"] = True
                 
                 # 测试健康检查
@@ -282,16 +282,16 @@ class ServerDiagnostic:
                     import requests
                     response = requests.get('http://localhost:5000/health', timeout=5)
                     if response.status_code == 200:
-                        print("✅ 健康检查通过")
+                        print("[OK] 健康检查通过")
                         self.results["service"]["health_check"] = True
                     else:
-                        print(f"⚠️  健康检查失败: {response.status_code}")
+                        print(f"[WARN]  健康检查失败: {response.status_code}")
                         self.results["service"]["health_check"] = False
                 except Exception as e:
-                    print(f"⚠️  健康检查失败: {e}")
+                    print(f"[WARN]  健康检查失败: {e}")
                     self.results["service"]["health_check"] = False
             else:
-                print("❌ 服务启动失败，端口5000未监听")
+                print("[FAIL] 服务启动失败，端口5000未监听")
                 self.results["service"]["startup"] = False
             
             # 停止服务
@@ -299,7 +299,7 @@ class ServerDiagnostic:
             time.sleep(2)
             
         except Exception as e:
-            print(f"❌ 服务启动测试失败: {e}")
+            print(f"[FAIL] 服务启动测试失败: {e}")
             self.results["service"]["startup"] = False
         
         print()
@@ -315,7 +315,7 @@ class ServerDiagnostic:
         with open(report_file, 'w', encoding='utf-8') as f:
             json.dump(self.results, f, indent=2, ensure_ascii=False)
         
-        print(f"✅ 详细报告已保存到: {report_file}")
+        print(f"[OK] 详细报告已保存到: {report_file}")
         print()
         
         # 总结
@@ -348,7 +348,7 @@ class ServerDiagnostic:
             print("3. 查看详细报告了解具体问题")
             print("4. 参考scenarios/win2012-server/README.md进行配置")
         else:
-            print("✅ 所有检查通过，系统配置正常")
+            print("[OK] 所有检查通过，系统配置正常")
         
         print()
     
@@ -379,10 +379,10 @@ def main():
         diagnostic.run_all_checks()
         return 0
     except KeyboardInterrupt:
-        print("\n\n⚠️  诊断被用户中断")
+        print("\n\n[WARN]  诊断被用户中断")
         return 1
     except Exception as e:
-        print(f"\n\n❌ 诊断过程中发生错误: {e}")
+        print(f"\n\n[FAIL] 诊断过程中发生错误: {e}")
         import traceback
         traceback.print_exc()
         return 1

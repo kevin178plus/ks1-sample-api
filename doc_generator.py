@@ -355,11 +355,11 @@ def main():
     result = generator.upload_and_get_link(title, content)
     
     if result['success']:
-        print(f"✅ 文档上传成功！")
+        print(f"[OK] 文档上传成功！")
         print(f"📄 访问链接: {result['url']}")
         print(f"📁 文件名: {result['filename']}")
     else:
-        print(f"❌ 上传失败: {result['error']}")
+        print(f"[FAIL] 上传失败: {result['error']}")
 
 
 if __name__ == "__main__":

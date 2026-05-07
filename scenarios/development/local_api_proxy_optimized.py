@@ -109,7 +109,7 @@ def load_env():
 load_env()
 API_KEY = os.getenv("OPENROUTER_API_KEY")
 if not API_KEY:
-    print("⚠️  警告: 未找到OPENROUTER_API_KEY，请配置.env文件")
+    print("[WARN]  警告: 未找到OPENROUTER_API_KEY，请配置.env文件")
 
 DEBUG_MODE = check_debug_mode()
 CACHE_DIR = os.getenv("CACHE_DIR")

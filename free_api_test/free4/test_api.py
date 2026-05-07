@@ -174,7 +174,7 @@ def main():
     total_count = len(results)
     
     for test_name, result, time_info in results:
-        status = "✅ 成功" if result is not None else "❌ 失败"
+        status = "[OK] 成功" if result is not None else "[FAIL] 失败"
         time_str = f"{time_info:.2f}秒" if result is not None else time_info
         print(f"{test_name}: {status} ({time_str})")
     

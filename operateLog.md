@@ -795,4 +795,35 @@ def list_models():
 
 ---
 
-*最后更新：2026-05-04 20:31:00*
+## 2026-05-07 - 修复 Windows 控制台 GBK 编码错误
+
+**更新时间：** 2026-05-07
+
+### 问题描述
+启动 `multi_free_api_proxy_v3_optimized.py` 时报错：
+```
+UnicodeEncodeError: 'gbk' codec can't encode character '\u2705' in position 7
+```
+原因是 Windows CMD/PowerShell 默认使用 GBK 编码，无法处理 emoji 字符。
+
+### 修复内容
+
+1. **更新项目规则文档** `_AI-RULES/base.md`
+   - 新增 `0.1 Windows 控制台编码规范` 章节
+   - 明确禁止在 print() 输出中使用 emoji 字符
+   - 提供 ASCII 替代方案：`✅` → `[OK]`, `❌` → `[FAIL]`, `⚠️` → `[WARN]`
+
+2. **修复文件列表**
+   - `server_diagnostic.py` (37处)
+   - `doc_generator.py` (2处)
+   - `scenarios/development/local_api_proxy_optimized.py` (2处)
+   - `free_api_test/free4/test_api.py` (2处)
+   - `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` (已修复)
+
+### 注意事项
+- HTML 模板中的 emoji 保留（通过 HTTP 传输，不受控制台编码限制）
+- 后续新增代码时需遵守 `_AI-RULES/base.md` 中的编码规范
+
+---
+
+*最后更新：2026-05-07 10:00:00*

@@ -7,6 +7,16 @@
 - 技术术语保持英文（如JSON、API、prompt等）
 - 代码注释使用中文
 
+### 0.1 Windows 控制台编码规范 ⚠️重要
+- **禁止在 print() 输出中使用 emoji 字符**（如 ✅❌🔄⚡ 等）
+- Windows CMD/PowerShell 默认使用 GBK 编码，无法处理 emoji
+- 如需状态标识，请使用 ASCII 替代：
+  - ✅ → `[OK]` 或 `✓`
+  - ❌ → `[FAIL]` 或 `✗`
+  - ⚠️ → `[WARN]`
+  - 🔄 → `[RETRY]`
+- 检查现有代码中的 emoji 并替换为 ASCII 字符
+
 ### 1. 时间和日期处理
 - 按照 `__AI-RULES\TIME_RULES.md` 规范
 - 所有时间戳使用ISO 8601格式
