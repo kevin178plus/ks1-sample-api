@@ -361,7 +361,10 @@ pip install --upgrade watchdog
 **解决方案：**
 ```bash
 # 检查服务是否运行
-curl http://localhost:5000/health
+curl http://localhost:5060/health
+
+# 访问调试页面
+# http://localhost:5060/debug
 
 # 重启 Go 版本
 050-start_api_proxy_go.bat
@@ -371,3 +374,53 @@ curl http://localhost:5000/health
 ```
 
 详见：[api-proxy-go/README.md](./api-proxy-go/README.md)
+
+---
+
+## 🔄 Python版 vs Go版 差异说明
+
+### 端口和调试页面
+
+| 版本 | 端口 | 调试页面 | 健康检查 |
+|------|------|----------|----------|
+| **Python (GUI)** | `5000` | http://localhost:5000/debug | 无定期检查 |
+| **Go 版本** | `5060` | http://localhost:5060/debug | 每12小时定期检查 |
+
+### 可用上游判断逻辑差异
+
+| 特性 | Python 版本 | Go 版本 |
+|------|-------------|---------|
+| **判断依据** | 启动时 API 测试 + 失败黑名单(60秒) | 健康检查 (12小时周期) + Enabled配置 |
+| **失败后行为** | 60秒后解除黑名单重新测试 | 连续失败3次永久标记不可用 |
+| **配置来源** | `free_api_test/free{N}/config.py` | `upstreams/{name}/config.yaml` (通过 migrate_config.py 迁移) |
+
+### 为什么两边显示的可用上游不同？
+
+1. **检测机制不同**：
+   - Python: 某些上游可能因失败被加入60秒黑名单，过期后重新测试
+   - Go: 健康检查失败后连续失败达到阈值才标记不可用
+
+2. **配置可能不同**：
+   - Python 版本可能加载了所有 `free_api_test` 中的 API
+   - Go 版本只加载了迁移的 `upstreams` 目录中的配置
+
+3. **API Key 状态不同**：
+   - 某些 API Key 可能在某个版本中配置正确，在另一个版本中缺失
+
+### 故障排查步骤
+
+1. **访问两边的调试页面对比**：
+   - Python: http://localhost:5000/debug
+   - Go: http://localhost:5060/debug
+
+2. **检查 Go 版本控制台日志**：
+   - 查看健康检查失败的具体错误信息
+   - 日志格式：`[健康检查] xxx 已失效: xxx`
+
+3. **检查 API Key 配置**：
+   - Python: 检查 `.env` 文件
+   - Go: 检查 `upstreams/{name}/config.yaml` 中的 `api_key` 字段
+
+4. **查看具体上游状态**：
+   - 访问 `/debug/apis` 接口查看每个上游的详细状态
+   - 关注 `consecutive_failures` 和 `last_test_result` 字段
