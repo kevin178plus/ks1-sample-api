@@ -232,7 +232,7 @@ def validate_all_apis_before_startup():
             "error": error_msg
         })
         
-        status = "✅" if is_valid else "❌"
+        status = "[OK]" if is_valid else "[FAIL]"
         print(f"[配置验证] {status} {api_name}: {error_msg if error_msg else '配置正确'}")
     
     print(f"\n[配置验证] 验证完成: {valid_count} 个有效, {invalid_count} 个无效")
@@ -408,9 +408,9 @@ def test_all_apis_startup():
     print(f"[启动测试] 总计API: {total_apis}, 可用: {len(available)}, 失败: {len(failed_apis)}")
     
     if successful_apis:
-        print(f"[启动测试] ✅ 可用API列表: {successful_apis}")
+        print(f"[启动测试] [OK] 可用API列表: {successful_apis}")
     if failed_apis:
-        print(f"[启动测试] ⚠️  测试失败API列表: {failed_apis}")
+        print(f"[启动测试] [WARN] 测试失败API列表: {failed_apis}")
         print(f"[启动测试] 提示: 可用API数量较少，部分请求可能失败")
     
     # 即使没有可用API也允许启动（会在运行时动态测试）
