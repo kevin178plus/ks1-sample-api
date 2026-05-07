@@ -438,6 +438,39 @@ function resetWeights() {
     });
 }
 
+function reloadApiConfigs() {
+    if (!confirm('确定要重新加载所有API配置吗？这将重新测试所有API的可用性。')) {
+        return;
+    }
+    
+    const btn = event.target;
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '重新加载中...';
+    
+    fetch('/debug/api/reload', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'}
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            alert(`✅ API配置已重新加载！\n可用API: ${data.available_count}/${data.total_count}\n列表: ${data.available_apis.join(', ')}`);
+            refreshManage();
+            refreshApis();
+        } else {
+            alert('重新加载失败: ' + (data.error || '未知错误'));
+        }
+    })
+    .catch(error => {
+        alert('请求失败: ' + error);
+    })
+    .finally(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+    });
+}
+
 function saveModel(apiName) {
     const select = document.getElementById('model_' + apiName);
     if (!select) {

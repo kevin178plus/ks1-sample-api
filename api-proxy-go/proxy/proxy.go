@@ -25,18 +25,22 @@ type Proxy struct {
 	statsMgr    *stats.StatsManager
 	keyStatsMgr *stats.KeyStatsManager
 	selector    *upstream.Selector
+	failover    *FailoverHandler
 	httpClient  *http.Client
 	mu          sync.RWMutex
 }
 
 // NewProxy 创建代理
 func NewProxy(cfg *config.Config, manager *upstream.Manager, statsMgr *stats.StatsManager, keyStatsMgr *stats.KeyStatsManager) *Proxy {
+	selector := upstream.NewSelector(manager)
+	backoff := time.Duration(cfg.Proxy.RetryBackoffBaseMS) * time.Millisecond
 	return &Proxy{
 		config:      cfg,
 		manager:     manager,
 		statsMgr:    statsMgr,
 		keyStatsMgr: keyStatsMgr,
-		selector:    upstream.NewSelector(manager),
+		selector:    selector,
+		failover:    NewFailoverHandler(manager, selector, cfg.Proxy.MaxRetries, backoff),
 		httpClient: &http.Client{
 			Timeout: 60 * time.Second,
 			Transport: &http.Transport{
@@ -50,8 +54,10 @@ func NewProxy(cfg *config.Config, manager *upstream.Manager, statsMgr *stats.Sta
 
 // ServeHTTP 处理 HTTP 请求
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// 只允许 localhost 请求
-	if !p.isLocalhost(r.RemoteAddr) {
+	// 只允许来自 localhost 的客户端访问
+	// 若部署在反向代理之后，可在 config.proxy.trusted_proxies 配置代理 IP/CIDR，
+	// 命中后再信任 XFF/X-Real-IP 中的客户端地址（P0-5）。
+	if !p.isClientLocalhost(r) {
 		http.Error(w, "Access denied", http.StatusForbidden)
 		return
 	}
@@ -72,16 +78,91 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// isLocalhost 检查是否来自 localhost
-func (p *Proxy) isLocalhost(remoteAddr string) bool {
-	// 移除端口号
-	host, _, err := net.SplitHostPort(remoteAddr)
-	if err != nil {
-		host = remoteAddr
+// isClientLocalhost 判断客户端是否为 localhost。
+//
+// 规则（P0-5 修复）：
+//  1. peer = SplitHostPort(RemoteAddr)。
+//  2. 若 peer 本身就是 localhost → 允许。
+//  3. 否则当且仅当 peer 命中 trusted_proxies 时，再解析
+//     X-Forwarded-For（取最左侧，即原始客户端）/ X-Real-IP，
+//     若解析出的客户端 IP 是 localhost 才允许。
+//  4. 默认 trusted_proxies 为空 → 不信任任何代理头，等同旧行为。
+func (p *Proxy) isClientLocalhost(r *http.Request) bool {
+	peer := splitHostNoPort(r.RemoteAddr)
+	if isLocalIP(peer) {
+		return true
 	}
+	if !p.isTrustedProxy(peer) {
+		return false
+	}
+	// peer 是可信代理，尝试从代理头解析真实客户端
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		// XFF 链：client, proxy1, proxy2, ... — 最左侧是原始客户端
+		first := xff
+		if idx := strings.Index(xff, ","); idx != -1 {
+			first = xff[:idx]
+		}
+		if isLocalIP(strings.TrimSpace(first)) {
+			return true
+		}
+	}
+	if xri := r.Header.Get("X-Real-IP"); xri != "" {
+		if isLocalIP(strings.TrimSpace(xri)) {
+			return true
+		}
+	}
+	return false
+}
 
-	// 检查是否为本地地址
-	return host == "127.0.0.1" || host == "::1" || host == "localhost"
+// isTrustedProxy 判断给定 IP 是否在 trusted_proxies 配置中（支持精确 IP 与 CIDR）
+func (p *Proxy) isTrustedProxy(ip string) bool {
+	if ip == "" || p.config == nil {
+		return false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
+	}
+	for _, entry := range p.config.Proxy.TrustedProxies {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		// CIDR 形式
+		if strings.Contains(entry, "/") {
+			_, cidr, err := net.ParseCIDR(entry)
+			if err == nil && cidr.Contains(parsed) {
+				return true
+			}
+			continue
+		}
+		// 精确 IP
+		if net.ParseIP(entry).Equal(parsed) {
+			return true
+		}
+	}
+	return false
+}
+
+// splitHostNoPort 提取 host 部分（无端口），失败时返回原值
+func splitHostNoPort(addr string) string {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return addr
+	}
+	return host
+}
+
+// isLocalIP 判断是否为 localhost 名称或环回地址
+func isLocalIP(host string) bool {
+	if host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return false
+	}
+	return ip.IsLoopback()
 }
 
 // handleChatCompletions 处理聊天完成请求
@@ -142,56 +223,19 @@ func (p *Proxy) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// executeWithFailover 带失效转移的请求执行
+// executeWithFailover 带失效转移的请求执行（thin wrapper，逻辑下沉到 FailoverHandler）。
 func (p *Proxy) executeWithFailover(ctx context.Context, reqData map[string]interface{}, apiKey string) (map[string]interface{}, string, error) {
-	maxRetries := 3
-	var lastErr error
-
-	for attempt := 0; attempt < maxRetries; attempt++ {
-		// 选择上游
-		upstreamName, err := p.selector.Select()
-		if err != nil {
-			return nil, "", fmt.Errorf("no available upstream: %w", err)
-		}
-
-		// 执行请求
-		result, err := p.executeRequest(ctx, upstreamName, reqData)
-		if err != nil {
-			lastErr = err
-
-			// 标记失败
-			p.manager.MarkFailure(upstreamName)
-
-			// 检查是否超时
-			if isTimeoutError(err) {
-				p.manager.MarkTimeout(upstreamName)
-			}
-
-			// 记录失败
-			log.Printf("[失效转移] %s 失败: %v (尝试 %d/%d)", upstreamName, err, attempt+1, maxRetries)
-
-			// 等待后重试
-			if attempt < maxRetries-1 {
-				time.Sleep(time.Duration(1<<attempt) * time.Second)
-				continue
-			}
-
-			continue
-		}
-
-		// 标记成功
-		p.manager.MarkSuccess(upstreamName)
-
-		// 检查阈值
-		p.statsMgr.CheckThresholds(upstreamName)
-
-		// 如果有权重自动减少
-		p.manager.DecreaseWeight(upstreamName)
-
-		return result, upstreamName, nil
+	result, upstreamName, err := p.failover.Execute(ctx, func(name string) (map[string]interface{}, error) {
+		return p.executeRequest(ctx, name, reqData)
+	})
+	if err != nil {
+		return nil, "", err
 	}
 
-	return nil, "", fmt.Errorf("all retries failed: %w", lastErr)
+	// 成功后续动作（仅在最终成功时执行）
+	p.statsMgr.CheckThresholds(upstreamName)
+	p.manager.DecreaseWeight(upstreamName)
+	return result, upstreamName, nil
 }
 
 // executeRequest 执行单个请求
@@ -282,7 +326,7 @@ func (p *Proxy) executeHTTPRequest(ctx context.Context, upstreamService *upstrea
 	// 解析响应
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("parse response failed: %w (response: %s)", err, string(respBody[:min(len(respBody), 500)]))
+		return nil, fmt.Errorf("parse response failed: %w (response: %s)", err, string(respBody[:minInt(len(respBody), 500)]))
 	}
 
 	// 检查响应是否包含错误
@@ -299,7 +343,7 @@ func (p *Proxy) executeHTTPRequest(ctx context.Context, upstreamService *upstrea
 	// 验证响应格式（与Python版本的validate_response类似）
 	content, err := upstream.ParseResponseContent(result, &cfg.ResponseFormat)
 	if err != nil {
-		return nil, fmt.Errorf("invalid response format: %w (result: %s)", err, string(respBody[:min(len(respBody), 500)]))
+		return nil, fmt.Errorf("invalid response format: %w (result: %s)", err, string(respBody[:minInt(len(respBody), 500)]))
 	}
 
 	// 如果解析后content为空，说明响应没有有效内容
@@ -323,9 +367,12 @@ func (p *Proxy) executeHTTPRequest(ctx context.Context, upstreamService *upstrea
 }
 
 // executeSDKRequest 执行 SDK 请求
+//
+// 注：SDK 模式尚未实现。配置加载阶段已将 use_sdk 强制降级为 HTTP（见
+// config.DiscoverUpstreams），正常情况下此函数不应被调用；保留作为
+// 防御性兜底。
 func (p *Proxy) executeSDKRequest(ctx context.Context, upstream *upstream.Upstream, reqData map[string]interface{}) (map[string]interface{}, error) {
-	// SDK 模式暂未实现，返回错误
-	return nil, fmt.Errorf("SDK mode not implemented")
+	return nil, fmt.Errorf("SDK mode not implemented (upstream=%s)", upstream.Name)
 }
 
 // extractAPIKey 提取 API Key
@@ -354,6 +401,16 @@ func isTimeoutError(err error) bool {
 	}
 	return strings.Contains(strings.ToLower(err.Error()), "timeout") ||
 		   strings.Contains(strings.ToLower(err.Error()), "deadline exceeded")
+}
+
+// minInt 返回两个 int 中较小者。
+// 显式实现，避免与 Go 1.21+ 内置 min 在不同工具链下行为差异，
+// 也防止包内引入同名变量时被遮蔽。
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // handleListModels 处理列出模型请求

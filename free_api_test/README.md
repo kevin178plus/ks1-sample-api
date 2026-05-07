@@ -156,6 +156,16 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Proxy**: **Required** (127.0.0.1:7897)
 - **Documentation**: See [free18/README.md](free18/README.md)
 
+### free19 - API 19
+- **Provider**: Unknown
+- **Status**: ✅ Active
+- **Proxy**: No
+
+### free20 - API 20
+- **Provider**: Unknown
+- **Status**: ✅ Active
+- **Proxy**: No
+
 ## Requirements
 
 - Python 3.7+

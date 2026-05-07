@@ -10,3 +10,26 @@ test_result.txt
 *.exe
 *.zip
 /multi_free_api_proxy/*.env
+
+# === 安全：阻止明文密钥再次进入仓库 ===
+# 任何位置的 .env / .env.local 等
+**/.env
+**/.env.*
+!**/.env.example
+
+# 上游配置目录中含 api_key 明文，统一改用环境变量；保留 example 作为模板
+api-proxy-go/upstreams/*/config.yaml
+!api-proxy-go/upstreams/example/config.yaml
+
+# 私钥 / 凭据
+*.pem
+*.key
+secrets/
+
+# 流量日志、缓存（可能含 prompt 内容）
+/logs/
+api-proxy-go/logs/
+api-proxy-go/*.log
+api-proxy-go/stdout.log
+api-proxy-go/stderr.log
+api-proxy-go/startup.log

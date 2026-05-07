@@ -7,26 +7,55 @@ import (
 	"time"
 )
 
+// 默认清理参数：
+//   - cleanupInterval：每 5 分钟扫一次
+//   - idleTTL：限流器在 10 分钟无访问后被回收
+const (
+	defaultCleanupInterval = 5 * time.Minute
+	defaultIdleTTL         = 10 * time.Minute
+)
+
 // RateLimiter 限流器（简单令牌桶实现）
+//
+// P0-4 修复：
+//   - 增加 lastSeen 字段记录最后访问时间。
+//   - 构造时启动后台清理 goroutine，按 idleTTL 回收空闲 limiter，
+//     避免大量动态 IP 场景下 map 无界增长。
+//   - 提供 Stop() 用于优雅关闭清理 goroutine。
 type RateLimiter struct {
-	limiters map[string]*tokenBucket
-	mu       sync.RWMutex
-	rps      int // 每秒请求数限制
+	limiters        map[string]*tokenBucket
+	mu              sync.Mutex
+	rps             int
+	cleanupInterval time.Duration
+	idleTTL         time.Duration
+	stopCh          chan struct{}
+	stopOnce        sync.Once
 }
 
 // tokenBucket 令牌桶
 type tokenBucket struct {
-	tokens    int
+	tokens     int
 	lastRefill time.Time
-	mu        sync.Mutex
+	lastSeen   time.Time
+	mu         sync.Mutex
 }
 
-// NewRateLimiter 创建限流器
+// NewRateLimiter 创建限流器并启动后台清理协程
 func NewRateLimiter(rps int) *RateLimiter {
-	return &RateLimiter{
-		limiters: make(map[string]*tokenBucket),
-		rps:      rps,
+	return NewRateLimiterWithTTL(rps, defaultCleanupInterval, defaultIdleTTL)
+}
+
+// NewRateLimiterWithTTL 自定义清理参数（主要用于测试）
+func NewRateLimiterWithTTL(rps int, cleanupInterval, idleTTL time.Duration) *RateLimiter {
+	rl := &RateLimiter{
+		limiters:        make(map[string]*tokenBucket),
+		rps:             rps,
+		cleanupInterval: cleanupInterval,
+		idleTTL:         idleTTL,
+		stopCh:          make(chan struct{}),
 	}
+	go rl.cleanupLoop()
+	return rl
 }
 
 // getLimiter 获取指定 IP 的限流器
@@ -39,10 +68,13 @@ func (rl *RateLimiter) getLimiter(ip string) *tokenBucket {
 		limiter = &tokenBucket{
 			tokens:     rl.rps,
 			lastRefill: time.Now(),
+			lastSeen:   time.Now(),
 		}
 		rl.limiters[ip] = limiter
+	} else {
+		// 更新最后访问时间，防止活跃 IP 被错误回收
+		limiter.lastSeen = time.Now()
 	}
-
 	return limiter
 }
 
@@ -72,21 +104,56 @@ func (tb *tokenBucket) allow(rps int) bool {
 // Handler 返回限流处理器
 func (rl *RateLimiter) Handler(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// 获取客户端 IP
 		ip := getClientIP(r)
-
-		// 获取限流器
 		limiter := rl.getLimiter(ip)
-
-		// 检查是否超过限制
 		if !limiter.allow(rl.rps) {
 			http.Error(w, "Too many requests", http.StatusTooManyRequests)
 			return
 		}
-
-		// 放行
 		next.ServeHTTP(w, r)
 	})
+}
+
+// Stop 停止后台清理协程，幂等。
+func (rl *RateLimiter) Stop() {
+	rl.stopOnce.Do(func() {
+		close(rl.stopCh)
+	})
+}
+
+// Size 当前 limiter 数量（测试与 /debug 暴露用）。
+func (rl *RateLimiter) Size() int {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	return len(rl.limiters)
+}
+
+// cleanupLoop 周期性回收空闲 limiter
+func (rl *RateLimiter) cleanupLoop() {
+	ticker := time.NewTicker(rl.cleanupInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-rl.stopCh:
+			return
+		case now := <-ticker.C:
+			rl.purgeIdle(now)
+		}
+	}
+}
+
+// purgeIdle 清理 lastSeen 超过 idleTTL 的 limiter
+func (rl *RateLimiter) purgeIdle(now time.Time) {
+	rl.mu.Lock()
+	defer rl.mu.Unlock()
+	for ip, lim := range rl.limiters {
+		lim.mu.Lock()
+		expired := now.Sub(lim.lastSeen) > rl.idleTTL
+		lim.mu.Unlock()
+		if expired {
+			delete(rl.limiters, ip)
+		}
+	}
 }
 
 // getClientIP 获取客户端 IP
@@ -95,14 +162,14 @@ func getClientIP(r *http.Request) string {
 	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
 		// 取第一个 IP
 		if idx := strings.Index(xff, ","); idx != -1 {
-			return xff[:idx]
+			return strings.TrimSpace(xff[:idx])
 		}
-		return xff
+		return strings.TrimSpace(xff)
 	}
 
 	// 从 X-Real-IP 获取
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
+		return strings.TrimSpace(xri)
 	}
 
 	// 从 RemoteAddr 获取
@@ -114,17 +181,4 @@ func getClientIP(r *http.Request) string {
 	}
 
 	return "unknown"
-}
-
-// cleanup 定期清理未使用的限流器
-func (rl *RateLimiter) cleanup(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		rl.mu.Lock()
-		// 简单实现：清理所有（实际应该根据最后使用时间清理）
-		rl.limiters = make(map[string]*tokenBucket)
-		rl.mu.Unlock()
-	}
 }

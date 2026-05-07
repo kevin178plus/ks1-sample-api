@@ -57,6 +57,42 @@ HTTP_PROXY=http://127.0.0.1:7897
 ### 3. 启动服务
 
 ```bash
+# 启动主服务（Python 版本）
+python local_api_proxy.py
+
+# 或使用批处理文件（Windows）
+start_proxy.bat
+
+# 启动 Go 版本（可选）
+050-start_api_proxy_go.bat
+```
+
+### 4. 配置你的工具
+
+将 API 端点改为：
+
+```
+http://localhost:5000/v1
+```
+
+### 5. 运行测试（可选）
+
+```bash
+# 测试 Python 版本
+020-test-on5001.bat
+
+# 测试 Go 版本
+040-test-api-proxy-go.bat
+```
+CACHE_DIR=./cache
+
+# HTTP 代理（如需要）
+HTTP_PROXY=http://127.0.0.1:7897
+```
+
+### 3. 启动服务
+
+```bash
 # 启动主服务
 python local_api_proxy.py
 
@@ -77,15 +113,19 @@ http://localhost:5000/v1
 - [详细文档](./API_PROXY_README.md) - 完整的 API 文档和配置指南
 - [多 API 文档](./multi_free_api_proxy/MULTI_FREE_API_README.md) - 多 API 代理服务文档
 - [free_api_test README](./free_api_test/README.md) - 所有免费 API 详细说明
+- [Go 版本文档](./api-proxy-go/README.md) - Go 版本 API 代理服务文档
 
 ## 🔧 文件说明
 
 | 文件/目录 | 说明 |
 |-----------|------|
-| `local_api_proxy.py` | 主代理服务程序 |
+| `local_api_proxy.py` | 主代理服务程序（Python 版本） |
 | `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` | 多 API 代理服务 |
 | `free_api_test/` | 免费 API 配置目录 |
-| `start_proxy.bat` | Windows 启动脚本 |
+| `api-proxy-go/` | Go 版本 API 代理服务 |
+| `start_proxy.bat` | Windows 启动脚本（Python 版本） |
+| `050-start_api_proxy_go.bat` | Go 版本启动脚本 |
+| `040-test-api-proxy-go.bat` | Go 版本测试脚本 |
 | `.env` | 配置文件（需要自己创建） |
 | `DEBUG_MODE.txt` | 调试模式开关 |
 
@@ -98,6 +138,34 @@ http://localhost:5000/v1
 | `/health` | GET | 健康检查 |
 | `/debug` | GET | 调试面板（需启用调试模式） |
 | `/debug/stats` | GET | 调用统计 JSON（需启用调试模式） |
+
+## 📚 免费 API 列表
+
+| API | 服务商 | 模型 | 状态 | 代理 |
+|-----|--------|------|------|------|
+| free1 | OpenRouter | openrouter/free | ✅ | 需要 |
+| free2 | ChatAnywhere | gpt-3.5-turbo | ✅ | 否 |
+| free3 | Free.v36.cm | gpt-4o-mini | ✅ | 否 |
+| free4 | Mistral AI | mistral-small | ✅ | 否 |
+| free6 | CSDN | DeepSeek-V3 | ✅ | 否 |
+| free7 | NVIDIA | nvidia/llama | ✅ | 否 |
+| free8 | Friendli.ai | llama-3.3-70B | ✅ | 独立服务 |
+| free9 | 火山引擎 | ark-code-latest | ⚠️ | 否 |
+| free10 | 阿里云 Qwen | qwen-turbo | ⚠️ | 否 |
+| free11 | OpenAI兼容 | gpt-4o-mini | ⚠️ | 需代理 |
+| free12 | 硅基流动 | Qwen2.5-7B-Instruct | ⚠️ | 否 |
+| free13 | Volcengine | ark-code-latest | ✅ | 否 |
+| free14 | CogView | cgc-apikey | ✅ | 否 |
+| free15 | Groq | llama-3.3-70b | ✅ | **需要** |
+| free16 | Sambanova | DeepSeek-V3.1 | ✅ | 否 |
+| free17 | Cerebras | llama3.1-8b | ✅ | **需要** |
+| free18 | Google Gemini | gemini-3-flash | ✅ | **需要** |
+| free19-20 | 新增 API | various | ✅ | 否 |
+
+**说明：**
+- ✅ 表示已测试可用
+- "独立服务" 表示需要单独启动服务（free5, free8）
+- "需要" 表示需要通过 HTTP 代理访问
 
 ## 💡 使用示例
 
@@ -144,6 +212,7 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 | free16 | Sambanova | DeepSeek-V3.1 | ✅ | 否 |
 | free17 | Cerebras | llama3.1-8b | ✅ | **需要** |
 | free18 | Google Gemini | gemini-3-flash | ✅ | **需要** |
+| free19-20 | 新增 API | various | ✅ | 否 |
 
 **说明：**
 - ✅ 表示已测试可用
@@ -260,3 +329,45 @@ MIT
 6. 重启服务
 
 详见：[free_api_test/README.md](./free_api_test/README.md)
+
+## 🆘 故障排除
+
+### 连接被拒绝
+
+- 确保服务正在运行
+- 检查端口 5000 是否被占用
+
+### API Key 错误
+
+- 检查 `.env` 文件中的 API Keys
+- 确保 API Keys 有效且未过期
+
+### 模型不可用
+
+- 免费模型会定期变化
+- 检查各平台官网了解当前可用的免费模型
+
+### Python 3.13 线程错误
+
+**解决方案：**
+```bash
+pip install --upgrade watchdog
+```
+
+需要升级到 watchdog 6.0.0 或更高版本。
+
+### Go 版本服务问题
+
+**解决方案：**
+```bash
+# 检查服务是否运行
+curl http://localhost:5000/health
+
+# 重启 Go 版本
+050-start_api_proxy_go.bat
+
+# 测试 Go 版本
+040-test-api-proxy-go.bat
+```
+
+详见：[api-proxy-go/README.md](./api-proxy-go/README.md)

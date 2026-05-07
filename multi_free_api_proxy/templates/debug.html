@@ -131,8 +131,9 @@
                     <li><strong>自动减少:</strong> 特别权重每次服务成功后自动减1，减到50为止不再减少。</li>
                 </ul>
             </div>
-            <div style="margin-bottom: 15px;">
-                <button class="btn-reset" onclick="resetWeights()">重置权重为默认值</button>
+            <div style="margin-bottom: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn-reload" onclick="reloadApiConfigs()">🔄 重新加载API配置</button>
+                <button class="btn-test-all" onclick="testAllApis()">▶ 执行全部测试</button>
                 <button class="refresh-btn" onclick="refreshManage()">刷新</button>
             </div>
             <table class="api-management-table">

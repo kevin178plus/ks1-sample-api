@@ -79,22 +79,27 @@ func main() {
 	// 创建代理
 	pxy := proxy.NewProxy(cfg, manager, statsMgr, keyStatsMgr)
 
-	// 创建流量日志器
+	// 创建流量日志器（P1-3：轮转参数从配置生效）
 	var trafficLogger *logger.TrafficLogger
 	if cfg.Debug.Enabled && cfg.Debug.TrafficLog.Enabled {
-		trafficLogger = logger.NewTrafficLogger(
+		trafficLogger = logger.NewTrafficLoggerWithRotation(
 			cfg.Debug.TrafficLog.Enabled,
 			cfg.Debug.TrafficLog.Path,
 			cfg.Debug.TrafficLog.BufferSize,
 			cfg.Debug.TrafficLog.RecordBody,
 			cfg.Debug.TrafficLog.MaxBodyBytes,
+			cfg.Debug.TrafficLog.MaxSizeMB,
+			cfg.Debug.TrafficLog.MaxBackups,
+			cfg.Debug.TrafficLog.Compress,
 		)
 		defer trafficLogger.Close()
 	}
+	_ = trafficLogger // 当前路由层尚未直接调用，保留以兼容后续引用
 
 	// 创建中间件
 	authMiddleware := middleware.NewAuth(cfg, keyStatsMgr)
 	rateLimitMiddleware := middleware.NewRateLimiter(cfg.RateLimit.RequestsPerSecond)
+	defer rateLimitMiddleware.Stop() // 关闭后台清理 goroutine（P0-4）
 	loggerMiddleware := middleware.NewLogger()
 
 	// 创建调试页面处理器

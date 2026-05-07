@@ -225,6 +225,30 @@ func (m *Manager) GetAvailable() []string {
 	return result
 }
 
+// GetAvailableWithWeights 在同一把锁内原子获取「可用列表 + 各自权重」快照，
+// 避免选择算法在迭代过程中读到不一致的状态（P0-3 修复）。
+//
+// 返回值为副本，调用方可自由修改不影响 Manager 内部状态。
+func (m *Manager) GetAvailableWithWeights() ([]string, map[string]int) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	names := make([]string, len(m.available))
+	copy(names, m.available)
+
+	weights := make(map[string]int, len(names))
+	for _, name := range names {
+		up, ok := m.upstreams[name]
+		if !ok {
+			continue
+		}
+		up.mu.RLock()
+		weights[name] = up.CurrentWeight
+		up.mu.RUnlock()
+	}
+	return names, weights
+}
+
 // UpdateAvailable 公开方法，更新可用列表
 func (m *Manager) UpdateAvailable() {
 	m.mu.Lock()

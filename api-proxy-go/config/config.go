@@ -61,6 +61,17 @@ func validateConfig(cfg *Config) error {
 		return fmt.Errorf("rate_limit.requests_per_second 必须 > 0")
 	}
 
+	// 验证代理 / 重试配置（P1-2）
+	if cfg.Proxy.MaxRetries <= 0 {
+		cfg.Proxy.MaxRetries = 3
+	}
+	if cfg.Proxy.MaxRetries > 20 {
+		return fmt.Errorf("proxy.max_retries 过大: %d (建议 <=20)", cfg.Proxy.MaxRetries)
+	}
+	if cfg.Proxy.RetryBackoffBaseMS <= 0 {
+		cfg.Proxy.RetryBackoffBaseMS = 1000
+	}
+
 	return nil
 }
 
@@ -195,6 +206,13 @@ func DiscoverUpstreams(rootDir string) (map[string]*UpstreamConfig, error) {
 		}
 
 		cfg.Name = name
+
+		// P1-4：SDK 模式尚未实现，加载阶段直接拒绝并提示，避免运行时 500
+		if cfg.UseSDK {
+			log.Printf("[配置][警告] 上游 %s 配置 use_sdk=true，但 SDK 模式尚未实现，已自动降级为 HTTP 模式", name)
+			cfg.UseSDK = false
+		}
+
 		upstreams[name] = cfg
 	}
 

@@ -11,6 +11,17 @@ type Config struct {
 	Debug       DebugConfig        `yaml:"debug"`        // 调试配置
 	HealthCheck HealthCheckConfig  `yaml:"health_check"` // 健康检查配置
 	Weight      WeightConfig       `yaml:"weight"`       // 权重配置
+	Proxy       ProxyConfig        `yaml:"proxy"`        // 代理与失败转移参数
+}
+
+// ProxyConfig 代理行为相关配置
+type ProxyConfig struct {
+	// MaxRetries 失败转移最大尝试次数（默认 3）
+	MaxRetries int `yaml:"max_retries"`
+	// RetryBackoffBaseMS 首次重试等待毫秒数；后续按 2^attempt * base 退避（默认 1000ms）
+	RetryBackoffBaseMS int `yaml:"retry_backoff_base_ms"`
+	// TrustedProxies 可信反向代理 IP/CIDR 列表；命中后才信任 X-Forwarded-For 解析 client IP（P0-5）
+	TrustedProxies []string `yaml:"trusted_proxies"`
 }
 
 // UpstreamsConfig 上游服务配置
@@ -145,6 +156,11 @@ func DefaultConfig() *Config {
 		Weight: WeightConfig{
 			SpecialThreshold: 100,
 			MinAutoDecrease:  50,
+		},
+		Proxy: ProxyConfig{
+			MaxRetries:         3,
+			RetryBackoffBaseMS: 1000,
+			TrustedProxies:     nil, // 默认不信任任何代理头
 		},
 	}
 }

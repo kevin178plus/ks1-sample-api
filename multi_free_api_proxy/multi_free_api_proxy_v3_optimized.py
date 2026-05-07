@@ -14,6 +14,7 @@ import importlib.util
 import random
 from pathlib import Path
 from datetime import datetime
+from typing import Dict, List, Optional, Tuple
 from flask import Flask, request, jsonify, render_template
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
@@ -184,6 +185,12 @@ def load_api_configs():
             if use_sdk:
                 api_config["use_sdk"] = True
 
+            # 验证API配置
+            is_valid, error_msg = validate_api_config(api_name, api_config)
+            if not is_valid:
+                print(f"[跳过] {api_name}: 配置验证失败 - {error_msg}")
+                continue
+
             app_state.add_api(api_name, api_config)
             print(f"[加载] {api_name}: {model_name} @ {base_url}")
 
@@ -191,7 +198,47 @@ def load_api_configs():
             print(f"[错误] 加载 {api_name} 配置失败: {e}")
 
     print(f"[配置] 已加载 {len(app_state.get_all_apis())} 个API配置")
+    
+    # 启动前验证
+    validate_all_apis_before_startup()
+    
     init_default_weights()
+
+
+def validate_all_apis_before_startup():
+    """启动前验证所有API配置"""
+    print("\n[配置验证] 开始验证所有API配置...")
+    
+    all_apis = app_state.get_all_apis()
+    valid_count = 0
+    invalid_count = 0
+    validation_results = []
+    
+    for api_name, api_config in all_apis.items():
+        is_valid, error_msg = validate_api_config(api_name, api_config)
+        
+        if is_valid:
+            valid_count += 1
+            # 检查API_KEY是否为空
+            if not api_config.get("api_key"):
+                error_msg = "API_KEY未配置"
+                is_valid = False
+        else:
+            invalid_count += 1
+        
+        validation_results.append({
+            "api_name": api_name,
+            "is_valid": is_valid,
+            "error": error_msg
+        })
+        
+        status = "✅" if is_valid else "❌"
+        print(f"[配置验证] {status} {api_name}: {error_msg if error_msg else '配置正确'}")
+    
+    print(f"\n[配置验证] 验证完成: {valid_count} 个有效, {invalid_count} 个无效")
+    if invalid_count > 0:
+        print("[警告] 部分API配置无效，这些API将不会被加载")
+    print()
 
 def init_default_weights():
     """初始化默认权重"""
@@ -201,10 +248,44 @@ def init_default_weights():
     app_state.init_weights(weights)
     print(f"[权重] 默认权重已初始化: {weights}")
 
+def validate_api_config(api_name: str, api_config: Dict) -> tuple[bool, str]:
+    """验证API配置的完整性
+    
+    Returns:
+        (是否有效, 错误信息)
+    """
+    errors = []
+    
+    # 检查必要字段
+    required_fields = ["base_url", "model", "api_key"]
+    for field in required_fields:
+        if not api_config.get(field):
+            errors.append(f"缺少必要字段: {field}")
+    
+    # 检查base_url格式
+    base_url = api_config.get("base_url", "")
+    if base_url:
+        if not base_url.startswith("http://") and not base_url.startswith("https://"):
+            errors.append(f"base_url格式不正确: {base_url}")
+    
+    # 检查model是否为空
+    model = api_config.get("model", "")
+    if not model:
+        errors.append("model不能为空")
+    
+    if errors:
+        return False, "; ".join(errors)
+    return True, ""
+
 def test_api_startup(api_name):
-    """启动时测试API是否可用"""
+    """启动时测试API是否可用
+    
+    Returns:
+        True if successful, False otherwise
+    """
     api_config = app_state.get_api(api_name)
     if not api_config:
+        print(f"[启动测试] {api_name} 配置不存在")
         return False
 
     api_key = api_config["api_key"]
@@ -231,6 +312,7 @@ def test_api_startup(api_name):
                 api_config["available"] = False
                 api_config["last_test_result"] = f"failed: {response.status_code}"
                 api_config["failure_count"] += 1
+                print(f"[启动测试] {api_name} 独立服务不可用: {response.status_code}")
                 return False
         except Exception as e:
             api_config["available"] = False
@@ -276,6 +358,20 @@ def test_api_startup(api_name):
             api_config["failure_count"] += 1
             print(f"[启动测试] {api_name} 不可用: {response.status_code}")
             return False
+    except requests.exceptions.Timeout as e:
+        api_config["available"] = False
+        api_config["last_test_time"] = datetime.now().isoformat()
+        api_config["last_test_result"] = f"timeout: {str(e)}"
+        api_config["failure_count"] += 1
+        print(f"[启动测试] {api_name} 测试超时: {e}")
+        return False
+    except requests.exceptions.ConnectionError as e:
+        api_config["available"] = False
+        api_config["last_test_time"] = datetime.now().isoformat()
+        api_config["last_test_result"] = f"connection_error: {str(e)}"
+        api_config["failure_count"] += 1
+        print(f"[启动测试] {api_name} 连接错误: {e}")
+        return False
     except Exception as e:
         api_config["available"] = False
         api_config["last_test_time"] = datetime.now().isoformat()
@@ -289,17 +385,37 @@ def test_all_apis_startup():
     print("\n[启动测试] 开始测试所有API...")
 
     app_state.clear_available_apis()
+    
+    total_apis = len(app_state.get_all_apis())
+    successful_apis = []
+    failed_apis = []
 
     for api_name in app_state.get_all_apis():
         api_config = app_state.get_api(api_name)
         if api_config and api_config.get("api_key"):
             if test_api_startup(api_name):
                 app_state.add_available_api(api_name)
+                successful_apis.append(api_name)
+            else:
+                failed_apis.append(api_name)
+        else:
+            print(f"[跳过] {api_name}: 未配置API_KEY")
 
     available = app_state.get_available_apis()
-    print(f"[启动测试] 测试完成，可用API: {len(available)}/{len(app_state.get_all_apis())}")
-    if available:
-        print(f"[启动测试] 可用API列表: {available}")
+    
+    # 优化：即使部分API测试失败，也允许启动服务
+    print(f"\n[启动测试] 测试完成")
+    print(f"[启动测试] 总计API: {total_apis}, 可用: {len(available)}, 失败: {len(failed_apis)}")
+    
+    if successful_apis:
+        print(f"[启动测试] ✅ 可用API列表: {successful_apis}")
+    if failed_apis:
+        print(f"[启动测试] ⚠️  测试失败API列表: {failed_apis}")
+        print(f"[启动测试] 提示: 可用API数量较少，部分请求可能失败")
+    
+    # 即使没有可用API也允许启动（会在运行时动态测试）
+    if not available:
+        print(f"[警告] 没有可用的API！服务将启动但无法处理请求")
 
 def get_next_available_api():
     """获取下一个可用的API（基于权重选择）"""
@@ -730,21 +846,41 @@ def test_single_api():
         if not api_name or api_name not in app_state.get_all_apis():
             return jsonify({"success": False, "error": "Invalid API name"}), 400
 
-        result = test_api_startup(api_name)
+        # 验证API配置
         api_config = app_state.get_api(api_name)
+        is_valid, error_msg = validate_api_config(api_name, api_config)
+        
+        if not is_valid:
+            return jsonify({
+                "success": False,
+                "api_name": api_name,
+                "error": "配置验证失败",
+                "validation_error": error_msg,
+                "message": f"请检查API配置: {error_msg}"
+            }), 400
+
+        result = test_api_startup(api_name)
 
         if result:
             app_state.add_available_api(api_name)
+            message = f"{api_name} 测试成功，已加入可用列表"
+        else:
+            message = f"{api_name} 测试失败，请检查网络连接或API配置"
 
         return jsonify({
             "success": result,
             "api_name": api_name,
             "last_test_time": api_config.get("last_test_time"),
             "last_test_result": api_config.get("last_test_result"),
-            "available": api_config.get("available", False)
+            "available": api_config.get("available", False),
+            "message": message
         })
     except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+        return jsonify({
+            "success": False, 
+            "error": str(e),
+            "message": "测试过程中发生错误"
+        }), 500
 
 @app.route('/debug/api/test/all', methods=['POST'])
 def test_all_apis():
@@ -764,6 +900,38 @@ def test_all_apis():
             }
         return jsonify({"success": True, "results": results})
     except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+@app.route('/debug/api/reload', methods=['POST'])
+def reload_api_configs():
+    """重新加载所有API配置"""
+    try:
+        print("[配置重载] 开始重新加载API配置...")
+        
+        # 清空现有配置
+        app_state.clear_available_apis()
+        
+        # 重新加载环境变量
+        load_env()
+        
+        # 重新加载配置
+        load_api_configs()
+        
+        # 重新测试所有API
+        test_all_apis_startup()
+        
+        available = app_state.get_available_apis()
+        print(f"[配置重载] 重载完成，可用API: {len(available)}/{len(app_state.get_all_apis())}")
+        
+        return jsonify({
+            "success": True,
+            "message": "API配置已重新加载",
+            "available_count": len(available),
+            "total_count": len(app_state.get_all_apis()),
+            "available_apis": available
+        })
+    except Exception as e:
+        print(f"[配置重载] 重载失败: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
 def validate_response(result, api_name):

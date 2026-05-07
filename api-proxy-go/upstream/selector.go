@@ -7,10 +7,16 @@ import (
 )
 
 // Selector 选择器
+//
+// 并发说明：
+//   - s.mu 仅保护 s.rand 与 s.rrCounter（rand.Rand 与计数器都非并发安全）。
+//   - 上游列表与权重通过 Manager.GetAvailableWithWeights() 原子快照获得，
+//     不再在选择期间反复访问 Manager 状态（P0-3 修复）。
 type Selector struct {
-	manager *Manager
-	rand    *rand.Rand
-	mu      sync.Mutex
+	manager   *Manager
+	rand      *rand.Rand
+	rrCounter uint64 // 轮询计数器
+	mu        sync.Mutex
 }
 
 // NewSelector 创建选择器
@@ -23,46 +29,37 @@ func NewSelector(manager *Manager) *Selector {
 
 // Select 选择下一个上游（基于权重）
 func (s *Selector) Select() (string, error) {
-	available := s.manager.GetAvailable()
+	// 1. 原子快照：在 Manager 锁内一次性拿到 available + weights
+	available, weights := s.manager.GetAvailableWithWeights()
 	if len(available) == 0 {
 		return "", ErrNoAvailableUpstream
 	}
 
-	// 获取所有可用上游的权重
-	weights := make(map[string]int)
+	// 2. 计算总权重 + 是否存在特别权重上游（同一份快照下）
 	totalWeight := 0
-
+	specialThreshold := s.manager.config.Weight.SpecialThreshold
+	specialMaxName := ""
+	specialMaxWeight := -1
 	for _, name := range available {
-		weight := s.manager.GetWeight(name)
-		weights[name] = weight
-		totalWeight += weight
-	}
-
-	if totalWeight <= 0 {
-		// 所有权重都为0，使用轮询
-		return s.selectRoundRobin(available), nil
-	}
-
-	// 检查是否有特别权重的上游（> special_threshold）
-	cfg := s.manager.config
-	specialThreshold := cfg.Weight.SpecialThreshold
-
-	for _, name := range available {
-		if weights[name] > specialThreshold {
-			// 选择权重最大的特别权重上游
-			maxName := name
-			maxWeight := weights[name]
-			for n := range weights {
-				if weights[n] > maxWeight {
-					maxWeight = weights[n]
-					maxName = n
-				}
-			}
-			return maxName, nil
+		w := weights[name]
+		totalWeight += w
+		if w > specialThreshold && w > specialMaxWeight {
+			specialMaxWeight = w
+			specialMaxName = name
 		}
 	}
 
-	// 正常权重选择
+	// 3. 命中特别权重 → 直接返回（必然选中策略）
+	if specialMaxName != "" {
+		return specialMaxName, nil
+	}
+
+	// 4. 全为 0 → 轮询
+	if totalWeight <= 0 {
+		return s.selectRoundRobin(available), nil
+	}
+
+	// 5. 加权随机：rand 调用与本地变量绑定，无任何外部共享状态
 	s.mu.Lock()
 	r := s.rand.Intn(totalWeight)
 	s.mu.Unlock()
@@ -75,18 +72,20 @@ func (s *Selector) Select() (string, error) {
 		}
 	}
 
-	// 理论上不会到这里
-	return available[0], nil
+	// 浮点/整数累加边界兜底
+	return available[len(available)-1], nil
 }
 
-// selectRoundRobin 轮询选择
+// selectRoundRobin 轮询选择（在权重全为 0 时使用）
 func (s *Selector) selectRoundRobin(available []string) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	// 简单实现：返回第一个，调用方需要处理轮询
-	// 在实际使用中，应该在 Manager 中维护轮询状态
-	return available[0]
+	if len(available) == 0 {
+		return ""
+	}
+	idx := s.rrCounter % uint64(len(available))
+	s.rrCounter++
+	return available[idx]
 }
 
 // SelectModel 选择模型（如果上游支持多模型）
