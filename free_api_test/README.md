@@ -4,7 +4,7 @@ This directory contains tests and examples for multiple Free AI API services.
 
 ## Overview
 
-This test suite provides access to multiple free AI API services through a unified interface. Each free API service is located in its own subdirectory (free1-free18) and provides access to different AI models.
+This test suite provides access to multiple free AI API services through a unified interface. Each free API service is located in its own subdirectory (free1-free21) and provides access to different AI models.
 
 ## Available Services
 
@@ -44,14 +44,6 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Proxy**: No
 - **Documentation**: See [free4/README.md](free4/README.md)
 
-### free5 - iFlow SDK API ⚠️ **已停用**
-- **Provider**: iFlow
-- **Base URL**: iflow (uses SDK)
-- **Models**: iflow
-- **Features**: Python SDK-based API with async support
-- **Status**: Service discontinued in March 2026
-- **Documentation**: See [free5/README.md](free5/README.md)
-
 ### free6 - CSDN API
 - **Provider**: CSDN
 - **Base URL**: https://models.csdn.net
@@ -63,7 +55,7 @@ This test suite provides access to multiple free AI API services through a unifi
 
 ### free7 - NVIDIA API
 - **Provider**: NVIDIA
-- **Base URL**: https://integrate.api.nvidia.com
+- **Base URL**: https://integrate.api.nvidia.io
 - **Models**: Various NVIDIA hosted models
 - **Features**: High-performance GPU-accelerated inference
 - **Status**: ✅ Active
@@ -84,7 +76,7 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Base URL**: https://ark.cn-beijing.volces.com/api/coding
 - **Models**: ark-code-latest
 - **Features**: Coding Plan API compatible with OpenAI standard
-- **Status**: Coding Plan expired in March 2026
+- **Status**: ❌ Coding Plan expired in March 2026
 - **Documentation**: See [free9/README.md](free9/README.md)
 
 ### free10 - API 10
@@ -161,10 +153,21 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Status**: ✅ Active
 - **Proxy**: No
 
-### free20 - API 20
-- **Provider**: Unknown
+### free20 - LongCat API
+- **Provider**: LongCat
+- **Base URL**: https://api.longcat.xyz
+- **Features**: OpenAI-compatible API
 - **Status**: ✅ Active
 - **Proxy**: No
+- **Documentation**: See [free20/config.py](free20/config.py)
+
+### free21 - FreeModel API
+- **Provider**: FreeModel
+- **Base URL**: https://api.freemodel.dev
+- **Features**: OpenAI-compatible API
+- **Status**: ✅ Active
+- **Proxy**: No
+- **Documentation**: See [free21/config.py](free21/config.py)
 
 ## Requirements
 
@@ -197,22 +200,24 @@ FREE11_API_KEY=your_api11_key
 FREE12_API_KEY=your_api12_key
 FREE13_API_KEY=your_volcengine_api_key
 FREE14_API_KEY=your_cogview_api_key
-GROQ_API_KEY=your_groq_api_key
-SAMBANOVA_API_KEY=your_sambanova_api_key
-CEREBRAS_API_KEY=your_cerebras_api_key
-GEMINI_API_KEY=your_gemini_api_key
+FREE15_API_KEY=your_groq_api_key
+FREE16_API_KEY=your_sambanova_api_key
+FREE17_API_KEY=your_cerebras_api_key
+FREE18_API_KEY=your_gemini_api_key
+FREE19_API_KEY=your_api19_key
+LONGCAT_API_KEY=your_longcat_api_key
+FREEMODEL_API_KEY=your_freemodel_api_key
 ```
 
 **Disabling Specific Services**:
 To disable a specific API service, simply comment out or delete the corresponding API_KEY line in the `.env` file. The system will automatically skip services without configured API keys.
 
 Currently disabled services:
-- free5 (iFlow SDK): Service discontinued in March 2026
 - free9 (火山方舟 Coding Plan): Coding Plan expired in March 2026
 
 For example, to disable a service:
 ```properties
-# FREE5_API_KEY=your_iflow_api_key  # Commented out - free5 will not be loaded
+# FREE9_API_KEY=your_api9_key  # Commented out - free9 will not be loaded
 ```
 
 **Note**:
@@ -255,19 +260,18 @@ See [../multi_free_api_proxy/MULTI_FREE_API_README.md](../multi_free_api_proxy/M
 
 ## Multi API Proxy Integration
 
-All free APIs (free1-free18) can be used through the multi_free_api_proxy service, which:
+All free APIs (free1-free21) can be used through the multi_free_api_proxy service, which:
 - Automatically detects and tests all available APIs
 - Rotates between APIs for load balancing
 - Handles API failures and retries
 - Provides unified OpenAI-compatible interface
-- **Routes special APIs (free5, free8) to independent services**
+- **Routes special API (free8) to independent service**
 
 ### Architecture
 
 ```
 主服务 (端口 5000)
-  ├── free1-free4, free6-free7, free10-free18: 直接调用
-  ├── free5: 路由到独立服务 (端口 5005)
+  ├── free1-free4, free6-free7, free9-free21: 直接调用
   └── free8: 路由到独立服务 (端口 5008)
 ```
 
@@ -275,7 +279,7 @@ All free APIs (free1-free18) can be used through the multi_free_api_proxy servic
 
 To start all services (main + independent):
 ```bash
-start_all_services.bat  # Windows
+035-start_all_services.bat  # Windows
 ```
 
 For more details, see the [multi_free_api_proxy documentation](../multi_free_api_proxy/).
@@ -316,7 +320,6 @@ RESPONSE_FORMAT = {
 | free2 | ChatAnywhere | gpt-3.5-turbo | No | ✅ |
 | free3 | Free.v36.cm | gpt-4o-mini | No | ✅ |
 | free4 | Mistral AI | mistral-small | No | ✅ |
-| free5 | iFlow | iflow | - | ❌ |
 | free6 | CSDN | DeepSeek-V3 | No | ✅ |
 | free7 | NVIDIA | nvidia/llama | No | ✅ |
 | free8 | Friendli.ai | llama-3.3-70B | - | ✅* |
@@ -328,6 +331,9 @@ RESPONSE_FORMAT = {
 | free16 | Sambanova | DeepSeek-V3.1 | No | ✅ |
 | free17 | Cerebras | llama3.1-8b | Yes | ✅ |
 | free18 | Google Gemini | gemini-3-flash | Yes | ✅ |
+| free19 | Unknown | various | No | ✅ |
+| free20 | LongCat | openrouter/free | No | ✅ |
+| free21 | FreeModel | freemodel | No | ✅ |
 
 **Legend:**
 - ✅ Active - Service is available

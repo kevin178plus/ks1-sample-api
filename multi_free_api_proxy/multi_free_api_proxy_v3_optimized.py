@@ -160,8 +160,6 @@ def load_api_configs():
 
             if api_name == "free1":
                 use_proxy = True
-            elif api_name == "free5":
-                use_sdk = True
 
             api_config = {
                 "name": api_name,

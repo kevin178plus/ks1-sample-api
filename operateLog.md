@@ -826,4 +826,203 @@ UnicodeEncodeError: 'gbk' codec can't encode character '\u2705' in position 7
 
 ---
 
-*最后更新：2026-05-07 10:00:00*
+*最后更新：2026-05-10 19:37:00*
+
+---
+
+## 2026-05-10 19:37:00 - 创建 free21 (FreeModel API) 上游配置
+
+**更新时间：** 2026-05-10 19:37:00
+
+### 操作内容
+
+根据用户提供的 FreeModel API 信息，创建 Go 版本上游配置目录：
+
+**创建目录：** `free_api_test/free21/`
+
+**配置文件：** `free_api_test/free21/config.py`
+
+### FreeModel API 信息
+
+- **API 地址：** https://api.freemodel.dev
+- **环境变量：** `FREEMODEL_API_KEY`
+- **支持的接口：** `/v1/chat/completions` (OpenAI 兼容格式)
+
+### 配置参数
+
+- **默认模型：** freemodel-default
+- **默认权重：** 100
+- **是否使用代理：** 否
+- **是否使用 SDK：** 否
+- **最大 Token 数：** 2000
+
+### 下一步
+
+1. 在 `api-proxy-go/upstreams/free21/config.yaml` 创建 Go 版配置
+2. 在 `api-proxy-go/config/config.go` 添加 free21 映射
+3. 在 `.env` 文件添加 `FREEMODEL_API_KEY`
+4. 重启服务使配置生效
+
+---
+
+## 2026-05-10 19:43:00 - 创建《启动文件与版本关系》文档
+
+**更新时间：** 2026-05-10 19:43:00
+
+### 操作内容
+
+整理项目中所有启动文件和版本的关系，创建文档：
+
+**文档文件：** `启动文件与版本关系.md`
+
+### 文档内容概要
+
+1. **版本架构总览** - Python版与Go版的架构关系
+2. **Python版版本详解**
+   - 独立服务（Free5/Free8）
+   - 主代理服务（v1原始版 / v3原版 / v3优化版）
+   - 版本功能对比表
+3. **Go版** - api-proxy-go 的特性和配置
+4. **启动脚本对应关系**
+   - 推荐使用的脚本
+   - 主服务启动脚本
+   - 独立服务启动脚本
+   - 测试脚本
+   - Go版相关脚本
+   - 建议删除的重复脚本
+5. **文件监控配置**
+6. **快速启动指南**
+7. **上游配置目录** (free1-free21)
+8. **端口分配表**
+
+---
+
+## 2026-05-10 19:45:00 - 创建《无效旧版本清理清单》文档
+
+**更新时间：** 2026-05-10 19:45:00
+
+### 操作内容
+
+分析项目中无效、过时、重复的文件，创建清理清单文档：
+
+**文档文件：** `无效旧版本清理清单.md`
+
+### 建议删除的文件
+
+#### Python 文件（2个）
+- `local_api_proxy.py` - v1 原始单文件版
+- `multi_free_api_proxy/multi_free_api_proxy.py` - v2 版本
+
+#### BAT 文件（7个）
+- `start_multi_free_api.bat` - v1/v2 启动脚本
+- `start_multi_free_api_v3-ansi.bat` - 乱码版本
+- `_start_multi_free_api_v3-ansi.bat` - 下划线+乱码
+- `_DelayStart-auto_start_multi_free_api_v3-ansi.bat` - 下划线+乱码+延迟
+- `start_main_service.bat` - 重复
+- `010-start_proxy_daemon-start.bat` - 简化版重复
+- `start_doc_generator.bat` - 无实际功能
+
+#### 可选目录
+- `scenarios/` - 历史部署脚本
+
+### 保留的文件
+- v1/ - PHP 版本（独立归档）
+- docs/ - 文档目录
+- multi_free_api_proxy_v3_optimized.py - v3 优化版（推荐）
+
+---
+
+## 2026-05-10 19:55:00 - 清理无效/旧版本文件
+
+**更新时间：** 2026-05-10 19:55:00
+
+### 删除的 Python 文件（3个）
+- `local_api_proxy.py` - v1 原始单文件版
+- `multi_free_api_proxy/multi_free_api_proxy.py` - v2 版本
+- `multi_free_api_proxy/multi_free_api_proxy_v3.py` - v3 原版（保留优化版）
+
+### 删除的 BAT 文件（8个）
+- `start_multi_free_api.bat` - v1/v2 启动脚本
+- `start_multi_free_api_v3.bat` - v3 原版启动脚本
+- `start_multi_free_api_v3-ansi.bat` - 乱码版本
+- `_start_multi_free_api_v3-ansi.bat` - 下划线+乱码
+- `_DelayStart-auto_start_multi_free_api_v3-ansi.bat` - 下划线+乱码+延迟
+- `start_main_service.bat` - 重复脚本
+- `010-start_proxy_daemon-start.bat` - 简化版重复
+- `start_doc_generator.bat` - 无实际功能
+
+### 保留的核心文件
+- `multi_free_api_proxy_v3_optimized.py` - v3 优化版（唯一主服务）
+- `_start_multi_free_api_v3-optimized.bat` - 推荐启动脚本
+
+---
+
+## 2026-05-10 19:57:00 - 清理 free5 (iFlow SDK) 相关代码
+
+**更新时间：** 2026-05-10 19:57:00
+
+### 背景
+iFlow SDK 服务已于 2026 年 3 月停用，决定从项目中完全移除 free5 相关代码。
+
+### 删除的目录
+- `free_api_test/free5/` - 整个目录（11个文件）
+
+### 修改的文件
+- `035-start_all_services.bat` - 移除 free5 启动命令
+- `multi_free_api_proxy_v3_optimized.py` - 移除 free5 的 SDK 路由逻辑
+
+### 保留的代码
+- `api-proxy-go/config/config.go` - 保留 free5 注释（标记为已停用），不影响运行
+
+### 当前状态
+- free5 目录已删除，不会被主服务加载
+- 独立服务启动脚本已更新
+- 主服务代码中的 free5 路由逻辑已移除
+
+---
+
+## 2026-05-10 20:06:00 - 整理 multi_free_api_proxy 文档
+
+**更新时间：** 2026-05-10 20:06:00
+
+### 操作内容
+
+整理 multi_free_api_proxy 目录下的文档，移除冗余/过时文档，保留核心文档到 docs/ 子目录。
+
+### 保留的文档（移动到 docs/）
+- `docs/README.md` - 主 README（重命名自 MULTI_FREE_API_README.md）
+- `docs/QUICK_START.md` - 快速开始指南
+
+### 删除的文档（10个）
+- `INDEX.md` - 与 README 重复
+- `README_OPTIMIZATION.md` - 与 README 重复
+- `MIGRATION_CHECKLIST.md` - 迁移已完成，过时
+- `MULTI_FREE_API_DESIGN.md` - 冗余文档
+- `MULTI_FREE_API_UPDATE.md` - 旧版更新日志
+- `OPTIMIZATION_COMPLETE.md` - 与其他优化文档重复
+- `OPTIMIZATION_GUIDE.md` - 与 README 重复
+- `OPTIMIZATION_SUMMARY.md` - 与 README 重复
+- `STRUCTURE_COMPARISON.md` - 历史对比文档
+- `DEBUG_MODE.txt` - 标志文件（已在目录中）
+
+### 当前目录结构
+
+```
+multi_free_api_proxy/
+├── docs/
+│   ├── README.md           # 主文档
+│   └── QUICK_START.md      # 快速开始
+├── static/
+├── templates/
+├── __init__.py
+├── app_state.py
+├── config.py
+├── errors.py
+├── multi_free_api_proxy_v3_optimized.py  # 主服务
+├── test_free1.py
+├── test_free2.py
+├── test_free3.py
+└── test_free4.py
+```
+
+---
