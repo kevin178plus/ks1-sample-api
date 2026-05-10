@@ -61,7 +61,7 @@ if not exist "config.yaml" (
     exit /b 1
 )
 
-start "API-Proxy-Go" cmd /k "api-proxy-go.exe -config config.yaml"
+start "API-Proxy-Go" cmd /k "color 0A & api-proxy-go.exe -config config.yaml"
 
 echo [完成] 服务已启动
-pause
+timeout /t 16

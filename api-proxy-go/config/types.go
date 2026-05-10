@@ -16,6 +16,8 @@ type Config struct {
 
 // ProxyConfig 代理行为相关配置
 type ProxyConfig struct {
+	// HTTPProxy 全局 HTTP 代理地址（如 http://127.0.0.1:7890）
+	HTTPProxy string `yaml:"http_proxy"`
 	// MaxRetries 失败转移最大尝试次数（默认 3）
 	MaxRetries int `yaml:"max_retries"`
 	// RetryBackoffBaseMS 首次重试等待毫秒数；后续按 2^attempt * base 退避（默认 1000ms）
@@ -158,7 +160,8 @@ func DefaultConfig() *Config {
 			MinAutoDecrease:  50,
 		},
 		Proxy: ProxyConfig{
-			MaxRetries:         3,
+			HTTPProxy:         "", // 从环境变量 HTTP_PROXY 或 PROXY_URL 加载
+			MaxRetries:        3,
 			RetryBackoffBaseMS: 1000,
 			TrustedProxies:     nil, // 默认不信任任何代理头
 		},

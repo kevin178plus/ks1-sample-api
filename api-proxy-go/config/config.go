@@ -72,6 +72,9 @@ func validateConfig(cfg *Config) error {
 		cfg.Proxy.RetryBackoffBaseMS = 1000
 	}
 
+	// 从环境变量加载代理配置
+	loadProxyFromEnv(cfg)
+
 	return nil
 }
 
@@ -121,6 +124,19 @@ func LoadUpstreamConfig(path string) (*UpstreamConfig, error) {
 	return cfg, nil
 }
 
+// loadProxyFromEnv 从环境变量加载代理配置
+// 支持的环境变量：HTTP_PROXY, HTTPS_PROXY, PROXY_URL
+func loadProxyFromEnv(cfg *Config) {
+	// 优先级：HTTP_PROXY > PROXY_URL
+	if proxy := os.Getenv("HTTP_PROXY"); proxy != "" {
+		cfg.Proxy.HTTPProxy = proxy
+		log.Printf("[配置] 从环境变量 HTTP_PROXY 加载代理: %s", proxy)
+	} else if proxy := os.Getenv("PROXY_URL"); proxy != "" {
+		cfg.Proxy.HTTPProxy = proxy
+		log.Printf("[配置] 从环境变量 PROXY_URL 加载代理: %s", proxy)
+	}
+}
+
 // loadAPIKeyFromEnv 从环境变量加载 API Key
 // 支持的环境变量格式：
 //   - FREE1_API_KEY, FREE2_API_KEY, ... (通用)
@@ -143,7 +159,7 @@ func loadAPIKeyFromEnv(cfg *UpstreamConfig) {
 
 	// 映射表：上游名称 -> 环境变量名
 	envVars := map[string]string{
-		"free1":  "OPENROUTER_API_KEY", // OpenRouter
+		"free1":  "FREE1_API_KEY", // OpenRouter
 		"free2":  "FREE2_API_KEY",
 		"free3":  "FREE3_API_KEY",
 		"free4":  "FREE4_API_KEY",

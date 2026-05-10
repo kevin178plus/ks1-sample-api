@@ -1,11 +1,20 @@
 # API 代理配置文件（从 Python 版本自动迁移）
 
 # 监听地址
-listen: ":5060"
+listen: ":8080"
 
 # 上游配置
 upstreams:
   root_dir: "./upstreams"  # 上游配置根目录
+
+# 代理配置
+# 支持从环境变量 HTTP_PROXY / PROXY_URL 自动加载
+# 也可直接在此配置（YAML 配置优先级低于环境变量）
+proxy:
+  http_proxy: ""           # 全局 HTTP 代理（如 http://127.0.0.1:7890）
+  max_retries: 3           # 失败转移最大重试次数
+  retry_backoff_base_ms: 1000  # 重试退避基数（毫秒）
+  trusted_proxies: []     # 可信反向代理 IP/CIDR
 
 # 认证配置
 auth:
@@ -35,9 +44,9 @@ debug:
 
 # 健康检查配置
 health_check:
-  enabled: true             # 是否启用健康检查
-  interval: 12h             # 检查间隔，默认 12 小时
-  timeout: 30s              # 检查超时时间
+  enabled: true             # 启用健康检查
+  interval: 5m               # 检查间隔，默认 5 分钟（可加快测试）
+  timeout: 10s               # 检查超时时间
   max_failures: 3           # 最大连续失败次数
 
 # 权重配置

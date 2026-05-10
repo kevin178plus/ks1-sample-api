@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -97,6 +99,9 @@ func (m *Manager) TestAll() {
 	}
 	m.mu.RUnlock()
 
+	// 按名称排序，确保测试顺序一致
+	sort.Strings(names)
+
 	log.Printf("[上游] 开始测试 %d 个启用的上游服务...", len(names))
 
 	for _, name := range names {
@@ -134,12 +139,12 @@ func (m *Manager) Test(name string) {
 	}
 
 	// HTTP 模式，发送测试请求
-	url := strings.TrimSuffix(config.Address, "/") + "/v1/chat/completions"
-	log.Printf("[上游] %s: 测试 %s", name, url)
+	apiURL := strings.TrimSuffix(config.Address, "/") + "/v1/chat/completions"
+	log.Printf("[上游] %s: 测试 %s", name, apiURL)
 	
 	// 创建最小化的测试请求体，使用上游配置的模型名称
 	testBody := fmt.Sprintf(`{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":1}`, config.Model)
-	req, err := http.NewRequestWithContext(m.healthCheckCtx, "POST", url, strings.NewReader(testBody))
+	req, err := http.NewRequestWithContext(m.healthCheckCtx, "POST", apiURL, strings.NewReader(testBody))
 	if err != nil {
 		log.Printf("[上游] %s: 创建请求失败: %v", name, err)
 		upstream.mu.Lock()
@@ -153,7 +158,34 @@ func (m *Manager) Test(name string) {
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := m.httpClient.Do(req)
+	// OpenRouter 需要 HTTP-Referer 和 X-Title 头
+	if strings.Contains(config.Address, "openrouter.ai") {
+		req.Header.Set("HTTP-Referer", "http://localhost:5000")
+		req.Header.Set("X-Title", "API-Proxy-Go")
+	}
+
+	// 选择 HTTP 客户端（根据是否需要代理）
+	httpClient := m.httpClient
+	if config.UseProxy && m.config.Proxy.HTTPProxy != "" {
+		proxyURL, err := url.Parse(m.config.Proxy.HTTPProxy)
+		if err != nil {
+			log.Printf("[上游] %s: 代理 URL 解析失败: %v", name, err)
+		} else {
+			transport := &http.Transport{
+				Proxy:           http.ProxyURL(proxyURL),
+				MaxIdleConns:    10,
+				MaxConnsPerHost: 10,
+				IdleConnTimeout: 90 * time.Second,
+			}
+			httpClient = &http.Client{
+				Timeout:   m.config.HealthCheck.Timeout,
+				Transport: transport,
+			}
+			log.Printf("[上游] %s: 使用代理 %s", name, m.config.Proxy.HTTPProxy)
+		}
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		log.Printf("[上游] %s: 请求失败: %v", name, err)
 		upstream.mu.Lock()
@@ -190,10 +222,8 @@ func (m *Manager) Test(name string) {
 	}
 	upstream.mu.Unlock()
 
-	// 更新可用列表
-	log.Printf("[上游] %s: 调用 updateAvailableList", name)
-	m.updateAvailableList()
-	log.Printf("[上游] %s: updateAvailableList 完成", name)
+	// 注意：不调用 UpdateAvailable() 更新可用列表
+	// 可用列表由健康检查 goroutine 定期更新，避免在 TestAll 遍历中产生锁竞争
 }
 
 // Get 获取上游
@@ -455,6 +485,7 @@ func (m *Manager) GetUpstreamInfo(name string) (available bool, model string, we
 }
 
 // GetAllUpstreamInfo 批量获取所有上游信息（用于调试页面优化性能）
+// 使用RLock读锁获取所有上游的快照信息，允许与健康检查的读锁并发
 func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -462,6 +493,7 @@ func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(m.upstreams))
 
 	for name, upstream := range m.upstreams {
+		// 外部已持有RLock，可以安全地使用RLock读取upstream数据
 		upstream.mu.RLock()
 		
 		stat := upstream.Stat
@@ -470,14 +502,21 @@ func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 			_, _, _, consecutiveFailures = stat.GetStats()
 		}
 
+		// 处理最后测试时间
+		lastTestTimeStr := "未测试"
+		if !upstream.LastTestTime.IsZero() {
+			lastTestTimeStr = upstream.LastTestTime.Format("2006-01-02 15:04:05")
+		}
+
 		info := map[string]interface{}{
-			"name":                name,
-			"available":           upstream.Available,
-			"model":               upstream.Config.Model,
-			"weight":              upstream.CurrentWeight,
+			"name":                 name,
+			"available":            upstream.Available,
+			"model":                upstream.Config.Model,
+			"weight":               upstream.CurrentWeight,
 			"consecutive_failures": consecutiveFailures,
-			"last_test_time":      upstream.LastTestTime.Format("2006-01-02 15:04:05"),
-			"enabled":             upstream.Config.Enabled,
+			"last_test_time":       lastTestTimeStr,
+			"last_test_result":     upstream.LastTestResult,
+			"enabled":              upstream.Config.Enabled,
 		}
 		
 		upstream.mu.RUnlock()

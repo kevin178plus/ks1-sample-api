@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -102,7 +103,7 @@ func (h *HealthChecker) checkUpstream(name string) {
 	}
 
 	// HTTP 模式，发送测试请求
-	url := strings.TrimSuffix(upstream.Config.Address, "/") + "/v1/chat/completions"
+	apiURL := strings.TrimSuffix(upstream.Config.Address, "/") + "/v1/chat/completions"
 
 	reqBody := `{
 		"model": "test",
@@ -113,7 +114,7 @@ func (h *HealthChecker) checkUpstream(name string) {
 	ctx, cancel := context.WithTimeout(h.ctx, h.manager.config.HealthCheck.Timeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", url, strings.NewReader(reqBody))
+	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, strings.NewReader(reqBody))
 	if err != nil {
 		h.markUnavailable(upstream, fmt.Sprintf("create request failed: %v", err))
 		return
@@ -122,7 +123,31 @@ func (h *HealthChecker) checkUpstream(name string) {
 	req.Header.Set("Authorization", "Bearer "+upstream.Config.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := h.manager.httpClient.Do(req)
+	// OpenRouter 需要 HTTP-Referer 和 X-Title 头
+	if strings.Contains(upstream.Config.Address, "openrouter.ai") {
+		req.Header.Set("HTTP-Referer", "http://localhost:5000")
+		req.Header.Set("X-Title", "API-Proxy-Go")
+	}
+
+	// 选择 HTTP 客户端（根据是否需要代理）
+	httpClient := h.manager.httpClient
+	if upstream.Config.UseProxy && h.manager.config.Proxy.HTTPProxy != "" {
+		proxyURL, err := url.Parse(h.manager.config.Proxy.HTTPProxy)
+		if err == nil {
+			transport := &http.Transport{
+				Proxy:           http.ProxyURL(proxyURL),
+				MaxIdleConns:    10,
+				MaxConnsPerHost: 10,
+				IdleConnTimeout: 90 * time.Second,
+			}
+			httpClient = &http.Client{
+				Timeout:   h.manager.config.HealthCheck.Timeout,
+				Transport: transport,
+			}
+		}
+	}
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		h.markUnavailable(upstream, fmt.Sprintf("request failed: %v", err))
 		return

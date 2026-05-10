@@ -1,5 +1,105 @@
 # 操作日志
 
+## 历史记录说明
+历史操作记录已按日期拆分到 logs/operateLog-by-ymd 目录下的对应文件中：
+- 2026-02-14.md：2月14日操作记录
+- 2026-02-15.md：2月15日操作记录
+- 2026-02-17.md：2月17日操作记录
+- 2026-02-18.md：2月18日操作记录
+
+---
+
+## 2026-05-10 - API代理Go版本调试页面死锁问题修复
+
+**更新时间：** 2026-05-10
+
+### 问题描述
+调试页面 `/debug` 的 "API 状态" 标签一直显示"正在加载..."或"全不可用"，请求超时。
+
+### 问题根因
+
+#### 1. GetAllUpstreamInfo 使用 TryLock 导致返回空数组
+
+**文件：** `api-proxy-go/upstream/upstream.go`
+
+**问题代码：**
+```go
+func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
+    if !m.mu.TryLock() {
+        // 无法获取锁（可能在健康检查中），返回空
+        return []map[string]interface{}{}
+    }
+    defer m.mu.Unlock()
+    // ...
+}
+```
+
+**问题分析：** `TryLock()` 是非阻塞的写锁尝试。当健康检查（`TestAll`）持有 `RLock`（读锁）时，写锁获取失败直接返回空数组，导致前端将所有API显示为不可用。
+
+**修复方案：** 使用 `RLock()`（读锁）替代 `TryLock()`，允许多个并发读取。
+
+#### 2. Test 函数在遍历中调用 UpdateAvailable 导致死锁
+
+**问题代码：**
+```go
+func (m *Manager) TestAll() {
+    m.mu.RLock()  // 持有读锁
+    for _, name := range names {
+        m.Test(name)  // Test 内部调用 UpdateAvailable
+    }
+    m.mu.RUnlock()
+}
+
+func (m *Manager) Test(name string) {
+    // ...
+    m.UpdateAvailable()  // 需要 Lock() 写锁 -> 死锁！
+}
+```
+
+**问题分析：** `UpdateAvailable()` 需要 `Lock()`（写锁），但在 `TestAll` 已经持有 `RLock`（读锁）的情况下尝试获取写锁，会导致死锁。
+
+**修复方案：** 移除 `Test` 函数中的 `UpdateAvailable` 调用。可用列表由健康检查 goroutine 定期更新。
+
+### 最终修复代码
+
+**GetAllUpstreamInfo (upstream.go:483-521)：**
+```go
+func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
+    m.mu.RLock()
+    defer m.mu.RUnlock()
+
+    result := make([]map[string]interface{}, 0, len(m.upstreams))
+
+    for name, upstream := range m.upstreams {
+        upstream.mu.RLock()
+        // ... 读取数据
+        upstream.mu.RUnlock()
+        result = append(result, info)
+    }
+
+    return result
+}
+```
+
+**Test 函数 (upstream.go:219-221)：**
+```go
+// 移除 UpdateAvailable() 调用
+// 注意：不调用 UpdateAvailable() 更新可用列表
+// 可用列表由健康检查 goroutine 定期更新，避免在 TestAll 遍历中产生锁竞争
+```
+
+### 附加发现
+
+**代理配置问题：** `upstreams/free1/config.yaml` 配置了 `use_proxy: true` 但全局代理为空，导致测试请求卡住。建议统一检查各上游配置的代理设置。
+
+### 配置变更记录
+
+**config.yaml：**
+- 临时禁用健康检查用于测试：`health_check.enabled: false`
+
+**debug.go：**
+- 前端超时从 120秒 缩短到 10秒：`setTimeout(..., 10000)`
+
 ---
 
 ## 2026-03-10 - V3原版与优化版多角度分析
@@ -1026,3 +1126,216 @@ multi_free_api_proxy/
 ```
 
 ---
+
+## 2026-05-10 21:10:00 - 修复 free1 API 测试失败问题
+
+**更新时间：** 2026-05-10 21:10:00
+
+### 问题描述
+
+调试 `localhost:5000/debug` 页面显示 free1 不可用，但通过 `new-demo.py` 直接调用 OpenRouter API 成功。
+
+### 原因分析
+
+1. **问题根源：** `multi_free_api_proxy_v3_optimized.py` 中 `config.HTTP_PROXY` 在模块导入时就初始化（第28行），但 `load_env()` 在 `main()` 函数中才被调用（第1214行）
+2. **加载顺序错误：** 导致 `config.HTTP_PROXY` 始终为 `None`
+3. **影响：** free1 配置 `USE_PROXY = True`，但测试时没有代理，OpenRouter API 无法访问
+
+### 修复内容
+
+**文件：** `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py`
+
+在 `config` 模块导入前，先调用 `_load_env()` 从项目根目录的 `.env` 文件加载环境变量：
+
+```python
+# 先加载 .env 环境变量
+def _load_env():
+    """加载环境变量"""
+    script_dir = Path(__file__).parent
+    env_file = script_dir.parent / ".env"
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ[key.strip()] = value.strip()
+
+_load_env()
+
+# 导入本地模块
+from config import get_config
+```
+
+### 同时修正的文件
+
+**文件：** `free_api_test/free1/new-demo.py`
+
+参照 `test_api.py` 进行以下修正：
+1. 添加从项目根目录加载 `.env` 文件
+2. 添加 UTF-8 编码支持（Windows 控制台兼容）
+3. 添加代理配置支持
+4. 使用 `openrouter/free` 模型
+
+### 验证结果
+
+重启服务后，free1 应该能正确加载 `HTTP_PROXY=http://127.0.0.1:7897`，测试通过。
+
+---
+
+## 2026-05-10 21:16:00 - Go版添加代理支持
+
+**更新时间：** 2026-05-10 21:16:00
+
+### 问题描述
+
+启动 Go 版 API 代理后，所有上游都显示不可用，但 Python 版本的 free1 通过代理可以正常访问。
+
+### 根本原因
+
+Go 版本的 `proxy/proxy.go` 和 `upstream/upstream.go` 虽然读取了 `use_proxy` 配置，但**没有实际使用代理发送 HTTP 请求**。
+
+### 修复内容
+
+**1. 添加全局代理配置字段**
+
+**文件：** `api-proxy-go/config/types.go`
+
+```go
+// ProxyConfig 添加 http_proxy 字段
+type ProxyConfig struct {
+    HTTPProxy string `yaml:"http_proxy"`  // 新增：全局 HTTP 代理
+    // ... 其他字段
+}
+```
+
+**2. 添加从环境变量加载代理配置**
+
+**文件：** `api-proxy-go/config/config.go`
+
+```go
+// loadProxyFromEnv 从环境变量加载代理配置
+func loadProxyFromEnv(cfg *Config) {
+    if proxy := os.Getenv("HTTP_PROXY"); proxy != "" {
+        cfg.Proxy.HTTPProxy = proxy
+        log.Printf("[配置] 从环境变量 HTTP_PROXY 加载代理: %s", proxy)
+    } else if proxy := os.Getenv("PROXY_URL"); proxy != "" {
+        cfg.Proxy.HTTPProxy = proxy
+        log.Printf("[配置] 从环境变量 PROXY_URL 加载代理: %s", proxy)
+    }
+}
+```
+
+**3. 代理请求执行（健康检查）**
+
+**文件：** `api-proxy-go/upstream/upstream.go`
+
+在 `Test()` 方法中，根据 `config.UseProxy` 和 `m.config.Proxy.HTTPProxy` 创建带代理的 HTTP 客户端。
+
+**4. 代理请求执行（实际请求）**
+
+**文件：** `api-proxy-go/proxy/proxy.go`
+
+在 `executeHTTPRequest()` 方法中同样添加代理支持。
+
+**5. 更新配置文件**
+
+**文件：** `api-proxy-go/config.yaml`
+
+添加代理配置说明。
+
+### 代理配置优先级
+
+1. 环境变量 `HTTP_PROXY`（最高优先级）
+2. 环境变量 `PROXY_URL`
+3. YAML 配置 `proxy.http_proxy`
+
+### 使用方法
+
+当前配置已从 `multi_free_api_proxy/.env` 自动加载：
+- `HTTP_PROXY=http://127.0.0.1:7897`
+
+只需重新运行 `050-start_api_proxy_go.bat` 即可生效。
+
+### 修改的文件列表
+
+| 文件 | 修改类型 |
+|------|----------|
+| `api-proxy-go/config/types.go` | 添加 HTTPProxy 字段 |
+| `api-proxy-go/config/config.go` | 添加 loadProxyFromEnv 函数 |
+| `api-proxy-go/proxy/proxy.go` | executeHTTPRequest 添加代理支持 |
+| `api-proxy-go/upstream/upstream.go` | Test 方法添加代理支持 |
+| `api-proxy-go/config.yaml` | 添加代理配置说明 |
+| `api-proxy-go/api-proxy-go.exe` | 重新编译 |
+
+### 验证方法
+
+1. 停止旧的 API Proxy Go 进程
+2. 运行 `050-start_api_proxy_go.bat`
+3. 查看日志，应显示：
+   - `[配置] 从环境变量 HTTP_PROXY 加载代理: http://127.0.0.1:7897`
+   - `[上游] free1: 使用代理 http://127.0.0.1:7897`
+   - `[上游] free1: 测试成功`
+4. 访问 `/health` 确认 free1 可用
+
+---
+
+## 2026-05-10 23:35:00 - Go版调试页面死锁、代理支持和可用列表问题修复
+
+**更新时间：** 2026-05-10 23:35:00
+
+### 问题描述
+Go版调试页面 `/debug` 显示 "API 状态" 标签一直显示"正在加载..."或"全不可用"，且 free1 (OpenRouter) 无法使用。
+
+### 问题根因（多个问题）
+
+#### 1. main.go 跳过了 HTTP_PROXY 环境变量
+**文件：** `api-proxy-go/main.go`
+**问题：** 代码错误地将 HTTP_PROXY 加入跳过列表，导致代理配置无法加载。
+**修复：** 移除 HTTP_PROXY 从跳过列表
+
+#### 2. free1 配置 use_proxy: false
+**文件：** `api-proxy-go/upstreams/free1/config.yaml`
+**问题：** Go版本配置 use_proxy: false，Python版本是 USE_PROXY = True
+**修复：** use_proxy: false → true
+
+#### 3. Test 函数缺少 OpenRouter 需要的 HTTP 头
+**文件：** `api-proxy-go/upstream/upstream.go`
+**问题：** OpenRouter API 需要 HTTP-Referer 和 X-Title 头部
+**修复：** 添加头部支持
+
+#### 4. 健康检查没有使用代理
+**文件：** `api-proxy-go/upstream/health.go`
+**问题：** health check 没有根据 use_proxy 配置使用代理
+**修复：** 添加代理支持和 OpenRouter 头部
+
+#### 5. TestAll 完成后没有更新可用列表
+**文件：** `api-proxy-go/main.go`
+**问题：** TestAll 异步完成后没有调用 UpdateAvailable()
+**修复：** 在 TestAll 完成回调中添加 UpdateAvailable() 调用
+
+#### 6. 健康检查被临时禁用
+**文件：** `api-proxy-go/config.yaml`
+**问题：** health_check.enabled 被设置为 false
+**修复：** health_check.enabled: false → true
+
+### 修改的文件列表
+| 文件 | 修改内容 |
+|------|----------|
+| `api-proxy-go/main.go` | 移除 HTTP_PROXY 跳过，TestAll完成后调用UpdateAvailable |
+| `api-proxy-go/upstreams/free1/config.yaml` | use_proxy: false → true |
+| `api-proxy-go/upstream/upstream.go` | 添加 OpenRouter HTTP头 |
+| `api-proxy-go/upstream/health.go` | 添加代理支持和OpenRouter HTTP头 |
+| `api-proxy-go/config.yaml` | health_check.enabled: false → true |
+| `api-proxy-go/api-proxy-go.exe` | 重新编译 |
+
+### 验证结果
+1. 代理正确加载：HTTP_PROXY 已加载
+2. free1 使用代理：测试时显示使用代理
+3. free1 测试成功：状态码 200
+4. /v1/models 返回模型列表（包括 openrouter/free）
+
+---
+

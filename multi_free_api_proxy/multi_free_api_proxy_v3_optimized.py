@@ -19,6 +19,23 @@ from flask import Flask, request, jsonify, render_template
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 
+# 先加载 .env 环境变量
+def _load_env():
+    """加载环境变量"""
+    script_dir = Path(__file__).parent
+    env_file = script_dir.parent / ".env"
+    if env_file.exists():
+        with open(env_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ[key.strip()] = value.strip()
+
+_load_env()
+
 # 导入本地模块
 from config import get_config
 from app_state import AppState

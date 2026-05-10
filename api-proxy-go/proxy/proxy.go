@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -42,11 +43,11 @@ func NewProxy(cfg *config.Config, manager *upstream.Manager, statsMgr *stats.Sta
 		selector:    selector,
 		failover:    NewFailoverHandler(manager, selector, cfg.Proxy.MaxRetries, backoff),
 		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
+			Timeout: 120 * time.Second, // 增大默认超时时间以适应慢速网络
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
+				IdleConnTimeout:     120 * time.Second,
 			},
 		},
 	}
@@ -54,6 +55,12 @@ func NewProxy(cfg *config.Config, manager *upstream.Manager, statsMgr *stats.Sta
 
 // ServeHTTP 处理 HTTP 请求
 func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// 健康检查端点允许外部访问（用于监控服务）
+	if r.URL.Path == "/health" {
+		p.handleHealth(w, r)
+		return
+	}
+
 	// 只允许来自 localhost 的客户端访问
 	// 若部署在反向代理之后，可在 config.proxy.trusted_proxies 配置代理 IP/CIDR，
 	// 命中后再信任 XFF/X-Real-IP 中的客户端地址（P0-5）。
@@ -68,8 +75,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.handleChatCompletions(w, r)
 	case strings.HasPrefix(r.URL.Path, "/v1/models"):
 		p.handleListModels(w, r)
-	case r.URL.Path == "/health":
-		p.handleHealth(w, r)
 	case strings.HasPrefix(r.URL.Path, "/debug"):
 		// 调试端点由 web 模块处理
 		http.Error(w, "Debug endpoint not implemented", http.StatusNotImplemented)
@@ -305,8 +310,30 @@ func (p *Proxy) executeHTTPRequest(ctx context.Context, upstreamService *upstrea
 	req.Header.Set("Authorization", "Bearer "+cfg.APIKey)
 	req.Header.Set("Content-Type", "application/json")
 
+	// 检查是否需要使用代理
+	httpClient := p.httpClient
+	if cfg.UseProxy && p.config.Proxy.HTTPProxy != "" {
+		proxyURL, err := url.Parse(p.config.Proxy.HTTPProxy)
+		if err != nil {
+			log.Printf("[代理] %s: 代理 URL 解析失败: %v", upstreamService.Name, err)
+		} else {
+			// 创建带有代理的 Transport
+			transport := &http.Transport{
+				Proxy:           http.ProxyURL(proxyURL),
+				MaxIdleConns:    100,
+				MaxConnsPerHost: 10,
+				IdleConnTimeout: 120 * time.Second,
+			}
+			httpClient = &http.Client{
+				Timeout:   120 * time.Second, // 增大超时时间以适应慢速网络
+				Transport: transport,
+			}
+			log.Printf("[代理] %s: 使用代理 %s", upstreamService.Name, p.config.Proxy.HTTPProxy)
+		}
+	}
+
 	// 发送请求
-	resp, err := p.httpClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -443,7 +470,7 @@ func (p *Proxy) handleListModels(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// handleHealth 处理健康检查请求
+// handleHealth 处理健康检查请求（允许外部访问，用于监控服务）
 func (p *Proxy) handleHealth(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -451,10 +478,14 @@ func (p *Proxy) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	available := p.manager.GetAvailable()
+	allUpstreams := p.manager.GetAll()
+	
 	result := map[string]interface{}{
-		"status":            "ok",
-		"available_count":   len(available),
+		"status":             "ok",
+		"available_count":     len(available),
+		"total_count":         len(allUpstreams),
 		"available_upstreams": available,
+		"health_check_enabled": p.config.HealthCheck.Enabled,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

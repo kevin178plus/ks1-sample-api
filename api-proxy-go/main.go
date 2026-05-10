@@ -62,6 +62,8 @@ func main() {
 	log.Printf("[启动] 测试上游服务...")
 	go func() {
 		manager.TestAll()
+		// 测试完成后更新可用列表
+		manager.UpdateAvailable()
 		log.Printf("[启动] 上游服务测试完成")
 	}()
 
@@ -237,9 +239,20 @@ func triggerGracefulRestart() {
 func loadEnvFile() {
 	// 尝试多个可能的 .env 文件位置
 	envPaths := []string{
-		".env",
-		"../.env",
-		os.Getenv("GOPATH") + "/src/github.com/kevin178plus/api-proxy-go/.env",
+		".env",                      // 当前目录
+		"../.env",                   // 上级目录（api-proxy-go -> 项目根目录）
+		"../../.env",                // 上上级目录
+	}
+
+	// 如果 GOPATH 存在，添加其下的路径
+	if goPath := os.Getenv("GOPATH"); goPath != "" {
+		envPaths = append(envPaths, goPath+"/src/github.com/kevin178plus/api-proxy-go/.env")
+	}
+
+	// 如果 EXE 路径存在，尝试从 EXE 所在目录的上一级加载
+	exePath := os.Getenv("EXE_PATH")
+	if exePath != "" {
+		envPaths = append(envPaths, filepath.Dir(exePath)+"/.env")
 	}
 
 	for _, envPath := range envPaths {
@@ -290,13 +303,9 @@ func loadEnv(path string) {
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
 
-		// 跳过 PORT 等配置（这些在 config.yaml 中配置）
-		if key == "PORT" || key == "CACHE_DIR" || key == "HTTP_PROXY" || key == "MAX_CONCURRENT_REQUESTS" {
-			continue
-		}
-
-		// 跳过 FREE1_API_KEY（free1 使用 OPENROUTER_API_KEY）
-		if key == "FREE1_API_KEY" {
+		// 跳过 PORT、CACHE_DIR、MAX_CONCURRENT_REQUESTS（这些在 config.yaml 中配置）
+		// HTTP_PROXY 需要设置，因为 config.go 会读取它用于代理
+		if key == "PORT" || key == "CACHE_DIR" || key == "MAX_CONCURRENT_REQUESTS" {
 			continue
 		}
 
