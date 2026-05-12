@@ -53,15 +53,14 @@
 
 ---
 
-## 📁 原始版本（开发调试）
-
-以下为原始的本地开发版本，仍可继续使用：
+## 📁 当前推荐版本
 
 ### 🎯 **重要路径说明**
-**注意：** 双击 `scenarios/development/` 目录下的批处理文件时：
-- ✅ **实际运行：** 项目根目录的 `local_api_proxy.py` 
-- ✅ **配置读取：** 项目根目录的 `.env` 文件
-- 🔄 **自动切换：** 批处理文件会自动切换到项目根目录执行
+**注意：** 当前项目使用 `multi_free_api_proxy_v3_optimized` 作为主版本：
+
+- ✅ **实际运行：** `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py`
+- ✅ **配置读取：** `multi_free_api_proxy/.env` 文件
+- 🔄 **启动方式：** 使用 `start_proxy.bat` 或 `035-start_all_services.bat`
 
 ### 1. 安装依赖
 
@@ -75,33 +74,35 @@ pip install flask requests watchdog
 
 ### 2. 配置 .env 文件
 
-在项目根目录创建或编辑 `.env` 文件：
+在 `multi_free_api_proxy/` 目录创建或编辑 `.env` 文件：
 
 ```
-OPENROUTER_API_KEY=sk-or-v1-xxxxxxxxxxxxx
+FREE1_API_KEY=sk-or-v1-xxxxxxxxxxxxx
+FREE2_API_KEY=sk-xxxxxxxxxxxxxxxx
 CACHE_DIR=./cache
+PORT=5000
 ```
 
-- `OPENROUTER_API_KEY`: 你的 OpenRouter API Key（必需）
+- `FREE{N}_API_KEY`: 各免费 API 的 Key（必需）
 - `CACHE_DIR`: 缓存目录路径（可选，调试模式下使用）
+- `PORT`: 服务端口（默认 5000）
 
 ### 3. 启动服务
 
-**方式一：使用场景脚本（推荐）**
+**方式一：使用批处理（推荐）**
 ```bash
-# 进入开发场景目录
-cd scenarios/development
-
-# 双击批处理文件，会自动切换到根目录运行
+# 启动主服务
 start_proxy.bat
-# 或
-start_proxy_optimized.bat
+
+# 或启动所有服务（包含 free8 独立服务）
+035-start_all_services.bat
 ```
 
 **方式二：直接运行**
 ```bash
-# 在项目根目录执行
-python local_api_proxy.py
+# 在 multi_free_api_proxy 目录执行
+cd multi_free_api_proxy
+python multi_free_api_proxy_v3_optimized.py
 ```
 
 服务将在 `http://localhost:5000` 启动
@@ -109,8 +110,8 @@ python local_api_proxy.py
 ### 4. 测试服务
 
 ```bash
-# 在项目根目录执行测试
-python test_local_proxy.py
+# 测试主服务
+python test_local_llm.py
 ```
 
 ### 4. 配置其他工具
@@ -120,7 +121,7 @@ python test_local_proxy.py
 ```
 API Base URL: http://localhost:5000/v1
 API Key: 任意值（代理会使用 .env 中的 key）
-Model: openrouter/free
+Model: 任意值（会自动选择最优 API）
 ```
 
 **Python 示例:**
@@ -363,11 +364,11 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 
 ## 注意事项
 
-- 确保 `.env` 文件中有 `OPENROUTER_API_KEY`
-- 代理会自动使用 `openrouter/free` 模型
-- 所有请求都会转发到 OpenRouter
+- 确保 `multi_free_api_proxy/.env` 文件中配置了各 `FREE{N}_API_KEY`
+- 代理会自动选择当前可用的免费 API
+- 支持多 API 轮换和故障转移
 - 代理不会缓存任何数据（除非启用调试模式）
-- 修改 `.env` 或 `local_api_proxy.py` 后，下一个请求会自动重新加载配置，无需手动重启
+- 修改配置文件后，下一个请求会自动重新加载配置，无需手动重启
 - 调试模式会产生大量文件，建议仅在需要时启用
 
 ## 故障排除
@@ -375,14 +376,14 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 ### 连接被拒绝
 
 - 确保代理服务正在运行
-- 检查端口 5000 是否被占用
+- 检查端口 5000（Python）或 5060（Go）是否被占用
 
 ### API Key 错误
 
-- 检查 `.env` 文件中的 `OPENROUTER_API_KEY`
-- 确保 API Key 有效
+- 检查 `multi_free_api_proxy/.env` 文件中的 `FREE{N}_API_KEY`
+- 确保 API Key 有效且未过期
 
 ### 模型不可用
 
-- OpenRouter 的免费模型会定期变化
-- 检查 OpenRouter 官网了解当前可用的免费模型
+- 免费 API 模型会定期变化
+- 访问调试面板查看各 API 状态：http://localhost:5000/debug

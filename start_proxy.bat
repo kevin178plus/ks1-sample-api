@@ -1,11 +1,11 @@
 @echo off
 setlocal enabledelayedexpansion
 
-title ks1-simple-api
+title ks1-simple-api (multi_free_api_proxy v3_optimized)
 
 cd /d "%~dp0"
 
-echo Starting local API proxy service...
+echo Starting multi_free_api_proxy v3_optimized service...
 echo.
 echo Checking dependencies...
 pip show watchdog >nul 2>&1
@@ -26,6 +26,7 @@ if errorlevel 1 (
 echo.
 echo Dependency check complete, starting service...
 echo.
-python local_api_proxy.py
+cd multi_free_api_proxy
+python multi_free_api_proxy_v3_optimized.py
 pause
 

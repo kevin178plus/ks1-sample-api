@@ -9,6 +9,53 @@
 
 ---
 
+## 2026-05-12 - 文档更新：移除已删除的 local_api_proxy.py 引用
+
+**更新时间：** 2026-05-12 09:53:00
+
+### 问题描述
+用户指出 README.md 和其他文档中仍在介绍已删除的 `local_api_proxy.py` (v1 单文件版)，导致文档与实际代码不一致。
+
+### 修改的文件
+
+1. **start_proxy.bat** - 更新启动脚本
+   - 将 `python local_api_proxy.py` 改为 `cd multi_free_api_proxy && python multi_free_api_proxy_v3_optimized.py`
+   - 更新标题和提示信息
+
+2. **README.md** - 更新主文档
+   - 移除文件说明中的 `local_api_proxy.py`
+   - 更新启动服务部分，添加推荐方式
+   - 更新自动重载部分的文件路径
+   - 更新故障排除部分的配置路径
+
+3. **API_PROXY_README.md** - 更新部署文档
+   - 更新"重要路径说明"指向正确文件
+   - 更新安装依赖和配置说明
+   - 更新启动服务方式
+   - 更新注意事项和故障排除
+
+4. **启动文件与版本关系.md** - 更新版本关系文档
+   - 更新版本架构总览
+   - 移除 v1 原始版描述
+   - 更新启动脚本对应关系
+   - 移除文件监控配置中的 v1 条目
+
+5. **版本分析报告.md** - 更新版本分析文档
+   - 更新项目版本总览
+   - 移除 local_api_proxy.py 相关描述
+   - 更新资源占用对比
+   - 更新功能对比总结
+
+### 关键变更
+
+| 旧内容 | 新内容 |
+|--------|--------|
+| `local_api_proxy.py` (v1 单文件版) | 已移除 |
+| 启动主入口 | `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` |
+| 配置文件 | `multi_free_api_proxy/.env` |
+
+---
+
 ## 2026-05-10 - API代理Go版本调试页面死锁问题修复
 
 **更新时间：** 2026-05-10
@@ -1339,6 +1386,61 @@ Go版调试页面 `/debug` 显示 "API 状态" 标签一直显示"正在加载..
 
 ---
 
-*最后更新：2026-05-10 23:55:52*
+*最后更新：2026-05-11 17:06:00*
+
+---
+
+## 2026-05-11 17:06:00 - LLM 本地服务测试 (API Key: sk-04d6316e048123a3-sjc5o8-39270609)
+
+**更新时间：** 2026-05-11 17:06:00
+
+### 测试目标
+测试本地 LLM 服务 http://localhost:20128 的可用模型和 chat/completions 接口
+
+### 测试脚本
+- `test_local_llm_key.py` - 带 API Key 的模型列表和聊天测试
+- `test_llm_raw.py` - 原始响应检查
+- `test_llm_stream.py` - SSE 流式响应解析
+
+### 测试结果汇总
+
+| 模型 | 状态 | 响应类型 | 说明 |
+|------|------|----------|------|
+| kr/glm-5 | ✅ OK | SSE 流式 | 正常工作，返回 "OK" |
+| kr/deepseek-3.2 | ✅ OK | SSE 流式 | 正常工作，返回 "OK" |
+| MiniMax-M2.5 | ❌ FAIL | JSON | "No active credentials for provider: openai" |
+| nvidia/minimaxai/minimax-m2.7 | ❌ FAIL | 超时 | 30秒超时无响应 |
+
+### 可用模型列表 (9个)
+```
+kr/claude-sonnet-4.5
+kr/claude-haiku-4.5
+kr/deepseek-3.2
+kr/qwen3-coder-next
+kr/glm-5
+kr/MiniMax-M2.5
+nvidia/minimaxai/minimax-m2.7
+nvidia/z-ai/glm4.7
+nvidia/parakeet-ctc-1.1b-asr
+```
+
+### 问题分析
+
+1. **MiniMax-M2.5 失败原因**
+   - 错误信息：`"No active credentials for provider: openai"`
+   - 可能是 LLM 服务配置问题，与代理无关
+   - 模型标识与 provider 不匹配
+
+2. **nvidia/minimaxai/minimax-m2.7 超时原因**
+   - 30秒内无响应
+   - 可能需要特殊配置或认证
+
+### 下一步行动
+1. 调查 LLM 服务的 MiniMax-M2.5 凭证配置问题
+2. 测试 Go 版本 debug 页面 (http://localhost:8080)
+3. 测试 Python 版本上游标识日志功能
+
+---
+
 *历史记录已拆分到 logs/operateLog-by-ymd/ 目录*
 

@@ -57,13 +57,20 @@ HTTP_PROXY=http://127.0.0.1:7897
 ### 3. 启动服务
 
 ```bash
-# 启动主服务（Python 版本）
-python local_api_proxy.py
+# 方式一：启动所有服务（推荐）
+035-start_all_services.bat
 
-# 或使用批处理文件（Windows）
+# 方式二：GUI 启动器
+036-start_all_services_gui.bat
+
+# 方式三：单独启动主服务
+cd multi_free_api_proxy
+python multi_free_api_proxy_v3_optimized.py
+
+# 或使用批处理文件
 start_proxy.bat
 
-# 启动 Go 版本（可选）
+# 方式四：Go 版本（高性能）
 050-start_api_proxy_go.bat
 ```
 
@@ -84,29 +91,6 @@ http://localhost:5000/v1
 # 测试 Go 版本
 040-test-api-proxy-go.bat
 ```
-CACHE_DIR=./cache
-
-# HTTP 代理（如需要）
-HTTP_PROXY=http://127.0.0.1:7897
-```
-
-### 3. 启动服务
-
-```bash
-# 启动主服务
-python local_api_proxy.py
-
-# 或使用批处理文件（Windows）
-start_proxy.bat
-```
-
-### 4. 配置你的工具
-
-将 API 端点改为：
-
-```
-http://localhost:5000/v1
-```
 
 ## 📚 文档
 
@@ -119,14 +103,14 @@ http://localhost:5000/v1
 
 | 文件/目录 | 说明 |
 |-----------|------|
-| `local_api_proxy.py` | 主代理服务程序（Python 版本） |
-| `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` | 多 API 代理服务 |
+| `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` | 主代理服务程序（推荐使用） |
 | `free_api_test/` | 免费 API 配置目录 |
-| `api-proxy-go/` | Go 版本 API 代理服务 |
-| `start_proxy.bat` | Windows 启动脚本（Python 版本） |
+| `api-proxy-go/` | Go 版本 API 代理服务（高性能） |
+| `start_proxy.bat` | Windows 启动脚本 |
+| `035-start_all_services.bat` | 一键启动所有服务 |
+| `036-start_all_services_gui.bat` | GUI 启动器 |
 | `050-start_api_proxy_go.bat` | Go 版本启动脚本 |
-| `040-test-api-proxy-go.bat` | Go 版本测试脚本 |
-| `.env` | 配置文件（需要自己创建） |
+| `.env` | 配置文件（需要自己配置 API Keys） |
 | `DEBUG_MODE.txt` | 调试模式开关 |
 
 ## 🌐 API 端点
@@ -243,8 +227,9 @@ MAX_CONCURRENT_REQUESTS=5
 
 修改以下文件后，下一个请求会自动重新加载配置，无需手动重启：
 
-- `.env` - 环境变量配置
-- `local_api_proxy.py` - 代码文件
+- `multi_free_api_proxy/.env` - 环境变量配置
+- `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` - 代码文件
+- `multi_free_api_proxy/config.py` - 配置文件
 
 ## 📊 调用统计
 
@@ -335,17 +320,18 @@ MIT
 ### 连接被拒绝
 
 - 确保服务正在运行
-- 检查端口 5000 是否被占用
+- 检查端口 5000（Python）或 5060（Go）是否被占用
 
 ### API Key 错误
 
-- 检查 `.env` 文件中的 API Keys
+- 检查 `multi_free_api_proxy/.env` 文件中的 API Keys
 - 确保 API Keys 有效且未过期
 
 ### 模型不可用
 
 - 免费模型会定期变化
 - 检查各平台官网了解当前可用的免费模型
+- 访问调试面板查看各 API 状态：http://localhost:5000/debug
 
 ### Python 3.13 线程错误
 
