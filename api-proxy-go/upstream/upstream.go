@@ -112,13 +112,13 @@ func (m *Manager) TestAll() {
 }
 
 // Test 测试单个上游
-func (m *Manager) Test(name string) {
+func (m *Manager) Test(name string) bool {
 	m.mu.RLock()
 	upstream, exists := m.upstreams[name]
 	m.mu.RUnlock()
 
 	if !exists {
-		return
+		return false
 	}
 
 	// 先获取配置信息，避免在持有锁的情况下进行 HTTP 请求
@@ -127,7 +127,7 @@ func (m *Manager) Test(name string) {
 	useSDK := config.UseSDK
 	upstream.mu.RUnlock()
 
-	if useSDK {
+if useSDK {
 		// SDK 模式，暂时标记为可用（实际测试在调用时进行）
 		upstream.mu.Lock()
 		upstream.Available = true
@@ -135,13 +135,13 @@ func (m *Manager) Test(name string) {
 		upstream.LastTestResult = "success (SDK mode)"
 		upstream.mu.Unlock()
 		log.Printf("[上游] %s: SDK 模式，跳过测试", name)
-		return
+		return true
 	}
 
 	// HTTP 模式，发送测试请求
 	apiURL := strings.TrimSuffix(config.Address, "/") + "/v1/chat/completions"
 	log.Printf("[上游] %s: 测试 %s", name, apiURL)
-	
+
 	// 创建最小化的测试请求体，使用上游配置的模型名称
 	testBody := fmt.Sprintf(`{"model":"%s","messages":[{"role":"user","content":"ping"}],"max_tokens":1}`, config.Model)
 	req, err := http.NewRequestWithContext(m.healthCheckCtx, "POST", apiURL, strings.NewReader(testBody))
@@ -152,7 +152,7 @@ func (m *Manager) Test(name string) {
 		upstream.LastTestTime = time.Now()
 		upstream.LastTestResult = fmt.Sprintf("create request failed: %v", err)
 		upstream.mu.Unlock()
-		return
+		return false
 	}
 
 	req.Header.Set("Authorization", "Bearer "+config.APIKey)
@@ -174,15 +174,17 @@ func (m *Manager) Test(name string) {
 			transport := &http.Transport{
 				Proxy:           http.ProxyURL(proxyURL),
 				MaxIdleConns:    10,
-				MaxConnsPerHost: 10,
+				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout: 90 * time.Second,
 			}
 			httpClient = &http.Client{
 				Timeout:   m.config.HealthCheck.Timeout,
 				Transport: transport,
 			}
-			log.Printf("[上游] %s: 使用代理 %s", name, m.config.Proxy.HTTPProxy)
+			log.Printf("[上游] %s: 通过代理测试 %s", name, m.config.Proxy.HTTPProxy)
 		}
+	} else if config.UseProxy {
+		log.Printf("[上游] %s: 需要代理但未配置 HTTP_PROXY", name)
 	}
 
 	resp, err := httpClient.Do(req)
@@ -193,7 +195,7 @@ func (m *Manager) Test(name string) {
 		upstream.LastTestTime = time.Now()
 		upstream.LastTestResult = fmt.Sprintf("request failed: %v", err)
 		upstream.mu.Unlock()
-		return
+		return false
 	}
 	defer resp.Body.Close()
 
@@ -222,8 +224,10 @@ func (m *Manager) Test(name string) {
 	}
 	upstream.mu.Unlock()
 
-	// 注意：不调用 UpdateAvailable() 更新可用列表
-	// 可用列表由健康检查 goroutine 定期更新，避免在 TestAll 遍历中产生锁竞争
+	// 更新可用列表
+	m.UpdateAvailable()
+
+	return success
 }
 
 // Get 获取上游
@@ -485,7 +489,7 @@ func (m *Manager) GetUpstreamInfo(name string) (available bool, model string, we
 }
 
 // GetAllUpstreamInfo 批量获取所有上游信息（用于调试页面优化性能）
-// 使用RLock读锁获取所有上游的快照信息，允许与健康检查的读锁并发
+// 只使用manager的读锁，避免与健康检查的写锁冲突
 func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
@@ -493,19 +497,12 @@ func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 	result := make([]map[string]interface{}, 0, len(m.upstreams))
 
 	for name, upstream := range m.upstreams {
-		// 外部已持有RLock，可以安全地使用RLock读取upstream数据
-		upstream.mu.RLock()
-		
-		stat := upstream.Stat
+		// 只读取不需要锁保护的数据
 		var consecutiveFailures int
-		if stat != nil {
-			_, _, _, consecutiveFailures = stat.GetStats()
-		}
-
-		// 处理最后测试时间
-		lastTestTimeStr := "未测试"
-		if !upstream.LastTestTime.IsZero() {
-			lastTestTimeStr = upstream.LastTestTime.Format("2006-01-02 15:04:05")
+		if upstream.Stat != nil {
+			// 直接读取 Stat 的字段（Stat 使用自己的锁，这里不加锁可能导致数据竞争）
+			// 但为了性能，这里直接读取，允许一定程度的数据不一致
+			consecutiveFailures = upstream.Stat.ConsecutiveFailures
 		}
 
 		info := map[string]interface{}{
@@ -514,12 +511,10 @@ func (m *Manager) GetAllUpstreamInfo() []map[string]interface{} {
 			"model":                upstream.Config.Model,
 			"weight":               upstream.CurrentWeight,
 			"consecutive_failures": consecutiveFailures,
-			"last_test_time":       lastTestTimeStr,
+			"last_test_time":       upstream.LastTestTime.Format("2006-01-02 15:04:05"),
 			"last_test_result":     upstream.LastTestResult,
 			"enabled":              upstream.Config.Enabled,
 		}
-		
-		upstream.mu.RUnlock()
 		result = append(result, info)
 	}
 

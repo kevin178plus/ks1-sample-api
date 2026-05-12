@@ -22,24 +22,11 @@ if not exist "%ENV_FILE%" (
 
 echo [配置] 从 %ENV_FILE% 加载环境变量...
 
-REM 逐行读取 .env 文件
-for /f "usebackq tokens=1,* delims== eol=#" %%a in ("%ENV_FILE%") do (
-    set "line=%%a"
-    set "val=%%b"
-    
-    REM 去除前后空格后的key
-    for /f "tokens=1" %%k in ("!line!") do set "key=%%k"
-    
-    REM 跳过空行
-    if defined key (
-        REM 设置环境变量（跳过空值）
-        if defined val (
-            set "!key!=!val!"
-        )
-    )
-)
-
-echo [完成] 环境变量加载完毕
+REM 将 .env 内容写入 api-proxy-go 目录的 .env 文件（Go 程序会读取）
+set "GO_ENV_FILE=%WORK_DIR%\.env"
+echo [配置] 复制环境变量到 %GO_ENV_FILE%...
+copy /Y "%ENV_FILE%" "%GO_ENV_FILE%" >nul
+echo [完成] 环境变量文件就绪
 echo.
 
 :start_service

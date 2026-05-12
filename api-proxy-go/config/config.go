@@ -135,6 +135,12 @@ func loadProxyFromEnv(cfg *Config) {
 		cfg.Proxy.HTTPProxy = proxy
 		log.Printf("[配置] 从环境变量 PROXY_URL 加载代理: %s", proxy)
 	}
+	// 打印最终使用的代理配置
+	if cfg.Proxy.HTTPProxy != "" {
+		log.Printf("[配置] 全局 HTTP 代理已配置: %s", cfg.Proxy.HTTPProxy)
+	} else {
+		log.Printf("[配置] 未配置全局 HTTP 代理")
+	}
 }
 
 // loadAPIKeyFromEnv 从环境变量加载 API Key
@@ -189,7 +195,9 @@ func loadAPIKeyFromEnv(cfg *UpstreamConfig) {
 
 	if apiKey := os.Getenv(envKey); apiKey != "" {
 		cfg.APIKey = apiKey
-		log.Printf("[配置] %s: 从环境变量 %s 加载 API Key", name, envKey)
+		log.Printf("[配置] %s: 从环境变量 %s 加载 API Key (长度: %d)", name, envKey, len(apiKey))
+	} else {
+		log.Printf("[配置] %s: 未找到 API Key (环境变量 %s 为空)", name, envKey)
 	}
 }
 
@@ -212,6 +220,13 @@ func DiscoverUpstreams(rootDir string) (map[string]*UpstreamConfig, error) {
 		}
 
 		name := entry.Name()
+
+		// 跳过以下划线开头的目录（示例/禁用配置）
+		if strings.HasPrefix(name, "_") {
+			log.Printf("[配置] 跳过目录 %s (以下划线开头，视为示例/禁用)", name)
+			continue
+		}
+
 		configPath := filepath.Join(rootDir, name, "config.yaml")
 
 		// 尝试加载 config.yaml

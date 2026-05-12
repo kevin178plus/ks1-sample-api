@@ -167,8 +167,16 @@ class ServerDiagnostic:
             self.results["configuration"]["env_file"] = False
             self.results["configuration"]["api_key"] = False
         
-        # 检查缓存目录
-        cache_dir = os.getenv('CACHE_DIR', 'R:\\api_proxy_cache')
+        # 缓存目录优先级：
+        # 1. 环境变量 CACHE_DIR（最高优先级）
+        # 2. R:\api_proxy_cache（如果 R:\ 驱动器存在，ramdisk 优先）
+        # 3. 脚本目录下的 api_proxy_cache（回退方案）
+        cache_dir = os.getenv('CACHE_DIR')
+        if not cache_dir:
+            if os.path.exists('R:\\'):
+                cache_dir = 'R:\\api_proxy_cache'
+            else:
+                cache_dir = os.path.join(os.path.dirname(__file__), 'api_proxy_cache')
         try:
             if os.path.exists(cache_dir):
                 print(f"[OK] 缓存目录存在: {cache_dir}")

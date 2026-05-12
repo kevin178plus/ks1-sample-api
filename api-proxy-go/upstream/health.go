@@ -129,7 +129,7 @@ func (h *HealthChecker) checkUpstream(name string) {
 		req.Header.Set("X-Title", "API-Proxy-Go")
 	}
 
-	// 选择 HTTP 客户端（根据是否需要代理）
+// 选择 HTTP 客户端（根据是否需要代理）
 	httpClient := h.manager.httpClient
 	if upstream.Config.UseProxy && h.manager.config.Proxy.HTTPProxy != "" {
 		proxyURL, err := url.Parse(h.manager.config.Proxy.HTTPProxy)
@@ -137,14 +137,17 @@ func (h *HealthChecker) checkUpstream(name string) {
 			transport := &http.Transport{
 				Proxy:           http.ProxyURL(proxyURL),
 				MaxIdleConns:    10,
-				MaxConnsPerHost: 10,
+				MaxIdleConnsPerHost: 10,
 				IdleConnTimeout: 90 * time.Second,
 			}
 			httpClient = &http.Client{
 				Timeout:   h.manager.config.HealthCheck.Timeout,
 				Transport: transport,
 			}
+			log.Printf("[健康检查] %s: 通过代理 %s", upstream.Name, h.manager.config.Proxy.HTTPProxy)
 		}
+	} else if upstream.Config.UseProxy {
+		log.Printf("[健康检查] %s: 需要代理但未配置 HTTP_PROXY", upstream.Name)
 	}
 
 	resp, err := httpClient.Do(req)

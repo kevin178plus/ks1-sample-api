@@ -239,9 +239,11 @@ func triggerGracefulRestart() {
 func loadEnvFile() {
 	// 尝试多个可能的 .env 文件位置
 	envPaths := []string{
-		".env",                      // 当前目录
-		"../.env",                   // 上级目录（api-proxy-go -> 项目根目录）
+		".env",                      // 当前目录 (api-proxy-go/)
+		"../.env",                   // 上级目录 (项目根目录)
 		"../../.env",                // 上上级目录
+		"../multi_free_api_proxy/.env",  // 兼容 Python 版本的 .env 位置
+		"../../multi_free_api_proxy/.env", // 也尝试这个位置
 	}
 
 	// 如果 GOPATH 存在，添加其下的路径

@@ -1444,3 +1444,83 @@ nvidia/parakeet-ctc-1.1b-asr
 
 *历史记录已拆分到 logs/operateLog-by-ymd/ 目录*
 
+---
+
+## 2026-05-12 20:56:00 - 实现缓存目录三级优先级机制
+
+**更新时间：** 2026-05-12 20:56:00
+
+### 问题描述
+
+用户报告缓存路径错误，且需要在两个环境下运行（一个有 R:\ ramdisk）：
+```
+[缓存错误] 保存消息失败: [WinError 3] 系统找不到指定的路径。: 'r:\\'
+```
+
+### 解决方案
+
+实现统一的缓存目录获取函数，支持三级优先级：
+
+**1. 环境变量 `CACHE_DIR`** - 最高优先级，方便临时覆盖
+**2. R:\ ramdisk** - 如果 R:\ 驱动器存在则优先使用
+**3. 脚本目录** - 回退方案
+
+### 修改的文件
+
+#### 1. `multi_free_api_proxy/config.py` - 新增统一函数
+
+```python
+def get_cache_dir(fallback_subdir='cache'):
+    """
+    获取缓存目录，优先级：
+    1. 环境变量 CACHE_DIR（最高优先级）
+    2. R:\\api_proxy_cache（如果 R:\\ 驱动器存在，ramdisk 优先）
+    3. 脚本目录下的缓存目录（回退方案）
+    """
+    # 1. 环境变量优先
+    cache_dir = os.getenv("CACHE_DIR")
+    if cache_dir:
+        return cache_dir
+    
+    # 2. 检查 R:\ 是否存在（ramdisk）
+    if os.path.exists('R:\\'):
+        return 'R:\\api_proxy_cache'
+    
+    # 3. 回退到脚本目录
+    script_dir = Path(__file__).parent.parent
+    return str(script_dir / fallback_subdir)
+```
+
+#### 2. `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` - 使用统一函数
+
+- `update_call_stats()` 函数
+- `debug_stats()` 函数
+
+#### 3. `server_diagnostic.py` - 实现相同逻辑
+
+### 使用方法
+
+**方式1：环境变量（推荐临时覆盖）**
+```bash
+# Windows
+set CACHE_DIR=D:\my_cache
+python server_diagnostic.py
+
+# 或在 .env 文件中
+CACHE_DIR=D:\my_cache
+```
+
+**方式2：利用 R:\ ramdisk**
+如果 R:\ 驱动器存在，缓存自动使用 `R:\api_proxy_cache`
+
+**方式3：使用脚本目录（默认）**
+无环境变量且无 R:\ 时，使用脚本目录下的 `cache` 或 `api_proxy_cache`
+
+### 适用场景
+
+| 环境 | 缓存目录 |
+|------|----------|
+| 有 R:\ ramdisk | `R:\api_proxy_cache` |
+| 无 R:\ + 设置环境变量 | `CACHE_DIR` 指定路径 |
+| 其他情况 | `{项目根目录}/cache` |
+

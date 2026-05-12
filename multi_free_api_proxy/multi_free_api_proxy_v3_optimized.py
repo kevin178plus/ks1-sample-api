@@ -47,7 +47,7 @@ app_state = AppState(config)
 
 def update_call_stats(success=True, is_timeout=False):
     """更新调用统计"""
-    cache_dir = config.CACHE_DIR or os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cache')
+    cache_dir = config.get_cache_dir()
     if not cache_dir:
         return
     
@@ -573,13 +573,14 @@ def chat_completions():
     try:
         data = request.get_json()
         message_id = str(time.time())
+        call_id = generate_call_id()
 
-        print(f"[请求] 收到请求 (ID: {message_id})")
+        print(f"[{call_id}] 收到请求 (ID: {message_id})")
 
         try:
-            result, retry_count, used_api_name = execute_with_free_api(data, message_id)
+            result, retry_count, used_api_name = execute_with_free_api(data, message_id, call_id)
         except NoAvailableAPIError as e:
-            print(f"[错误] 没有可用的上游API: {str(e)}")
+            print(f"[{call_id}] 没有可用的上游API: {str(e)}")
             available_apis = app_state.get_available_apis()
             all_apis = list(app_state.get_all_apis().keys())
             return jsonify({
@@ -591,8 +592,8 @@ def chat_completions():
                 }
             }), 503
 
-        print(f"[请求] 请求成功 (ID: {message_id}, API: {used_api_name}, 重试: {retry_count})")
-        
+        print(f"[{call_id}] 请求成功 (API: {used_api_name}, 重试: {retry_count})")
+
         update_call_stats(success=True)
         
         if retry_count > 0:
@@ -601,7 +602,7 @@ def chat_completions():
         return jsonify(result), 200
 
     except TimeoutError as e:
-        print(f"[请求] 超时: {str(e)}")
+        print(f"[{call_id}] 超时: {str(e)}")
         app_state.set_error(ErrorType.TIMEOUT.value, str(e))
         update_call_stats(success=False, is_timeout=True)
         return jsonify({
@@ -612,7 +613,7 @@ def chat_completions():
         }), 504
 
     except FormatError as e:
-        print(f"[请求] 格式错误（所有上游API均失败）: {str(e)}")
+        print(f"[{call_id}] 格式错误（所有上游API均失败）: {str(e)}")
         app_state.set_error(ErrorType.API_ERROR.value, str(e))
         update_call_stats(success=False)
         available_apis = app_state.get_available_apis()
@@ -628,14 +629,14 @@ def chat_completions():
         }), 502
 
     except Exception as e:
-        print(f"[错误] 请求失败: {str(e)}")
+        print(f"[{call_id}] 请求失败: {str(e)}")
         app_state.set_error(ErrorType.UNKNOWN.value, str(e))
         update_call_stats(success=False)
         return jsonify({"error": str(e)}), 500
 
     finally:
         app_state.decrement_active_requests()
-        print(f"[并发] 请求完成 (当前: {app_state.get_active_requests()}/{config.MAX_CONCURRENT_REQUESTS})")
+        print(f"[{call_id}] 请求完成 (当前: {app_state.get_active_requests()}/{config.MAX_CONCURRENT_REQUESTS})")
 
 @app.route('/v1/models', methods=['GET'])
 def list_models():
@@ -673,7 +674,7 @@ def health_upstream():
 def debug_stats():
     """获取调试统计信息"""
     try:
-        cache_dir = config.CACHE_DIR or os.path.join(os.path.dirname(os.path.dirname(__file__)), 'cache')
+        cache_dir = config.get_cache_dir()
         if not cache_dir:
             return jsonify({
                 "total": 0,
@@ -983,11 +984,46 @@ def validate_response(result, api_name):
     return True, None
 
 
-def execute_with_free_api(data, message_id):
-    """使用Free API执行请求"""
+import uuid
+
+# 生成短唯一调用ID的函数
+def generate_call_id():
+    """生成短唯一调用ID，如 CALL-A3B7"""
+    return f"CALL-{uuid.uuid4().hex[:4].upper()}"
+
+def execute_with_free_api(data, message_id, call_id=None):
+    """使用Free API执行请求
+    call_id: 可选的调用ID，如果未提供则自动生成
+    """
+    # 如果未提供call_id，生成一个
+    if call_id is None:
+        call_id = generate_call_id()
+
     retry_count = 0
     last_error = None
     used_api_name = None
+
+    # 日志前缀函数 - 清晰标识上游来源
+    def log_prefix(api_name=""):
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        if api_name:
+            return f"[{timestamp}] [{call_id}] ▶ {api_name}"
+        return f"[{timestamp}] [{call_id}]"
+
+    # 日志输出函数 - 自动添加前缀
+    def _log(msg, api_name=None):
+        if api_name:
+            print(f"{log_prefix(api_name)} {msg}")
+        else:
+            print(f"{log_prefix()} {msg}")
+
+    # 错误日志 - 专门记录上游错误
+    def _log_upstream_error(api_name, error_type, detail):
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] ▶ {api_name} ❌ {error_type}: {detail}")
+
+    # 成功日志 - 标识上游成功
+    def _log_upstream_success(api_name):
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] ▶ {api_name} ✓ 成功")
 
     for attempt in range(config.MAX_RETRIES):
         api_name = get_next_available_api()
@@ -1003,7 +1039,7 @@ def execute_with_free_api(data, message_id):
             service_url = f"http://localhost:{service_port}/v1/chat/completions"
 
             try:
-                print(f"[请求] 路由到 {api_name} 独立服务: {service_url}")
+                _log(f"路由到独立服务: {service_url}", api_name)
 
                 # 检查独立服务是否可用
                 models_url = f"http://localhost:{service_port}/v1/models"
@@ -1023,40 +1059,49 @@ def execute_with_free_api(data, message_id):
 
                 content_type = response.headers.get('Content-Type', '')
                 if 'text/html' in content_type.lower():
-                    print(f"[错误] {api_name} 返回HTML而非JSON")
+                    _log(f"返回HTML而非JSON", api_name)
                     raise Exception(f"Upstream {api_name} returned HTML instead of JSON")
 
                 # 诊断：记录原始响应
                 response_text = response.text
-                print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
-                print(f"[诊断] {api_name} 上游响应Content-Type: {content_type}")
-                print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
+                _log(f"上游响应状态码: {response.status_code}", api_name)
+                _log(f"上游响应Content-Type: {content_type}", api_name)
+                _log(f"上游响应长度: {len(response_text)} 字符", api_name)
 
                 if not response_text or response_text.strip() == '':
-                    print(f"[错误] {api_name} 上游返回空响应")
+                    _log(f"上游返回空响应", api_name)
                     raise Exception(f"Empty response from {api_name}")
 
                 if len(response_text) < 50:
-                    print(f"[诊断] {api_name} 上游响应内容: {response_text[:200]}")
+                    _log(f"上游响应内容: {response_text[:200]}", api_name)
 
                 try:
                     result = response.json()
                 except json.JSONDecodeError as e:
-                    print(f"[错误] {api_name} JSON解析失败: {str(e)}")
-                    print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                    _log(f"JSON解析失败: {str(e)}", api_name)
+                    _log(f"原始响应 (前500字符): {response_text[:500]}", api_name)
                     app_state.mark_api_failed_temporarily(api_name)
                     decrease_api_weight(api_name, reduction=50)
                     raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
 
                 is_valid, error_msg = validate_response(result, api_name)
                 if not is_valid:
-                    print(f"[错误] {api_name} 响应验证失败: {error_msg}")
-                    print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                    _log(f"响应验证失败: {error_msg}", api_name)
+                    _log(f"原始响应 (前500字符): {response_text[:500]}", api_name)
+                    # 记录上游返回的具体错误内容
+                    if "error" in result:
+                        error_detail = result["error"]
+                        if isinstance(error_detail, dict):
+                            error_msg_text = error_detail.get("message", str(error_detail))
+                        else:
+                            error_msg_text = str(error_detail)
+                        _log_upstream_error(api_name, "UPSTREAM_ERROR", error_msg_text[:200])
                     app_state.mark_api_failed_temporarily(api_name)
                     decrease_api_weight(api_name, reduction=50)
                     raise FormatError(f"Invalid response from {api_name}: {error_msg}")
 
-                print(f"[请求] {api_name} 独立服务成功")
+                _log(f"独立服务成功", api_name)
+                _log_upstream_success(api_name)
 
                 used_model = data.get("model", "unknown") if isinstance(data, dict) else "unknown"
                 app_state.set_last_used_model(api_name, used_model)
@@ -1068,7 +1113,8 @@ def execute_with_free_api(data, message_id):
 
             except Exception as e:
                 last_error = e
-                print(f"[请求] {api_name} 独立服务失败: {str(e)}")
+                _log(f"独立服务失败: {str(e)}", api_name)
+                _log_upstream_error(api_name, "ERROR", str(e))
 
                 # 标记失败
                 mark_api_failure(api_name)
@@ -1076,7 +1122,7 @@ def execute_with_free_api(data, message_id):
                 if attempt < config.MAX_RETRIES - 1:
                     retry_count += 1
                     wait_time = 2 ** attempt
-                    print(f"[重试] {wait_time}秒后重试...")
+                    _log(f"{wait_time}秒后重试...", api_name)
                     time.sleep(wait_time)
                     continue
 
@@ -1099,7 +1145,7 @@ def execute_with_free_api(data, message_id):
                 }
 
             current_timeout = config.TIMEOUT_RETRY if attempt > 0 else config.TIMEOUT_BASE
-            print(f"[请求] 发送到 {api_name} (尝试 {attempt + 1}/{config.MAX_RETRIES})")
+            _log(f"发送到 API (尝试 {attempt + 1}/{config.MAX_RETRIES})", api_name)
 
             request_data = {
                 "model": api_config.get("model"),
@@ -1120,80 +1166,94 @@ def execute_with_free_api(data, message_id):
 
             content_type = response.headers.get('Content-Type', '')
             if 'text/html' in content_type.lower():
-                print(f"[错误] {api_name} 返回HTML而非JSON")
+                _log(f"返回HTML而非JSON", api_name)
                 raise Exception(f"Upstream {api_name} returned HTML instead of JSON")
 
             # 诊断：记录原始响应
             response_text = response.text
-            print(f"[诊断] {api_name} 上游响应状态码: {response.status_code}")
-            print(f"[诊断] {api_name} 上游响应Content-Type: {content_type}")
-            print(f"[诊断] {api_name} 上游响应长度: {len(response_text)} 字符")
+            _log(f"上游响应状态码: {response.status_code}", api_name)
+            _log(f"上游响应Content-Type: {content_type}", api_name)
+            _log(f"上游响应长度: {len(response_text)} 字符", api_name)
 
             if not response_text or response_text.strip() == '':
-                print(f"[错误] {api_name} 上游返回空响应")
+                _log(f"上游返回空响应", api_name)
                 raise Exception(f"Empty response from {api_name}")
 
             if len(response_text) < 50:
-                print(f"[诊断] {api_name} 上游响应内容: {response_text[:200]}")
+                _log(f"上游响应内容: {response_text[:200]}", api_name)
 
             try:
                 result = response.json()
             except json.JSONDecodeError as e:
-                print(f"[错误] {api_name} JSON解析失败: {str(e)}")
-                print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                _log(f"JSON解析失败: {str(e)}", api_name)
+                _log(f"原始响应 (前500字符): {response_text[:500]}", api_name)
+                _log_upstream_error(api_name, "JSON_ERROR", str(e)[:80])
                 app_state.mark_api_failed_temporarily(api_name)
                 decrease_api_weight(api_name, reduction=50)
                 raise FormatError(f"Invalid JSON response from {api_name}: {str(e)}")
 
             is_valid, error_msg = validate_response(result, api_name)
             if not is_valid:
-                print(f"[错误] {api_name} 响应验证失败: {error_msg}")
-                print(f"[错误] {api_name} 原始响应 (前500字符): {response_text[:500]}")
+                _log(f"响应验证失败: {error_msg}", api_name)
+                _log(f"原始响应 (前500字符): {response_text[:500]}", api_name)
+                # 记录上游返回的具体错误内容
+                if "error" in result:
+                    error_detail = result["error"]
+                    if isinstance(error_detail, dict):
+                        error_msg_text = error_detail.get("message", str(error_detail))
+                    else:
+                        error_msg_text = str(error_detail)
+                    _log_upstream_error(api_name, "UPSTREAM_ERROR", error_msg_text[:200])
                 app_state.mark_api_failed_temporarily(api_name)
                 decrease_api_weight(api_name, reduction=50)
                 raise FormatError(f"Invalid response from {api_name}: {error_msg}")
 
             used_model = api_config.get("model", "unknown")
             app_state.set_last_used_model(api_name, used_model)
-            
+
             mark_api_success(api_name)
             decrease_api_weight(api_name)
             used_api_name = api_name
+
+            _log_upstream_success(api_name)
 
             return result, retry_count, used_api_name
 
         except requests.exceptions.Timeout as e:
             last_error = e
-            print(f"[请求] 超时 (尝试 {attempt + 1}/{config.MAX_RETRIES})")
+            _log(f"超时 (尝试 {attempt + 1}/{config.MAX_RETRIES})", api_name)
+            _log_upstream_error(api_name, "TIMEOUT", str(e)[:80])
             mark_api_failure(api_name)
 
             if attempt < config.MAX_RETRIES - 1:
                 retry_count += 1
                 wait_time = 2 ** attempt
-                print(f"[重试] {wait_time}秒后重试...")
+                _log(f"{wait_time}秒后重试...", api_name)
                 time.sleep(wait_time)
 
         except requests.exceptions.ConnectionError as e:
             last_error = e
-            print(f"[请求] 连接错误 (尝试 {attempt + 1}/{config.MAX_RETRIES})")
+            _log(f"连接错误 (尝试 {attempt + 1}/{config.MAX_RETRIES})", api_name)
+            _log_upstream_error(api_name, "CONNECTION_ERROR", str(e)[:80])
             mark_api_failure(api_name)
 
             if attempt < config.MAX_RETRIES - 1:
                 retry_count += 1
                 wait_time = 2 ** attempt
-                print(f"[重试] {wait_time}秒后重试...")
+                _log(f"{wait_time}秒后重试...", api_name)
                 time.sleep(wait_time)
 
         except requests.exceptions.HTTPError as e:
             last_error = e
             status_code = e.response.status_code if hasattr(e, 'response') else 'unknown'
-            print(f"[请求] HTTP错误 {status_code} (尝试 {attempt + 1}/{config.MAX_RETRIES})")
+            _log(f"HTTP错误 {status_code} (尝试 {attempt + 1}/{config.MAX_RETRIES})", api_name)
+            _log_upstream_error(api_name, f"HTTP {status_code}", str(e)[:100])
             mark_api_failure(api_name)
 
             if 500 <= status_code < 600 and attempt < config.MAX_RETRIES - 1:
                 retry_count += 1
                 wait_time = 2 ** attempt
-                print(f"[重试] {wait_time}秒后重试...")
+                _log(f"{wait_time}秒后重试...", api_name)
                 time.sleep(wait_time)
             else:
                 break
@@ -1201,19 +1261,20 @@ def execute_with_free_api(data, message_id):
         except FormatError as e:
             # 格式错误：快速切换到下一个 API，不等待
             last_error = e
-            print(f"[请求] 格式错误 - 快速切换到下一个 API: {str(e)}")
+            _log(f"格式错误 - 快速切换到下一个 API: {str(e)}", api_name)
+            _log_upstream_error(api_name, "FORMAT_ERROR", str(e)[:80])
             mark_api_failure(api_name)
 
             if attempt < config.MAX_RETRIES - 1:
                 retry_count += 1
-                print(f"[重试] 立即尝试下一个 API...")
+                _log(f"立即尝试下一个 API...", api_name)
                 continue
 
             raise last_error
 
         except Exception as e:
             last_error = e
-            print(f"[请求] 失败 (尝试 {attempt + 1}/{config.MAX_RETRIES}): {str(e)}")
+            _log(f"失败 (尝试 {attempt + 1}/{config.MAX_RETRIES}): {str(e)}", api_name)
             mark_api_failure(api_name)
             break
 

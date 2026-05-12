@@ -4,10 +4,42 @@
 import os
 from pathlib import Path
 
+
+def get_cache_dir(fallback_subdir='cache'):
+    """
+    获取缓存目录，优先级：
+    1. 环境变量 CACHE_DIR（最高优先级）
+    2. R:\\api_proxy_cache（如果 R:\\ 驱动器存在，ramdisk 优先）
+    3. 脚本目录下的缓存目录（回退方案）
+    """
+    # 1. 环境变量优先
+    cache_dir = os.getenv("CACHE_DIR")
+    if cache_dir:
+        return cache_dir
+    
+    # 2. 检查 R:\ 是否存在（ramdisk）
+    if os.path.exists('R:\\'):
+        return 'R:\\api_proxy_cache'
+    
+    # 3. 回退到脚本目录
+    script_dir = Path(__file__).parent.parent
+    return str(script_dir / fallback_subdir)
+
+
 class Config:
     """基础配置"""
-    # 调试模式
-    DEBUG_MODE = Path('DEBUG_MODE.txt').exists()
+
+    @staticmethod
+    def is_debug_mode():
+        """动态检查调试模式文件是否存在（相对于config.py所在目录）"""
+        config_dir = Path(__file__).parent
+        debug_file = config_dir / "DEBUG_MODE.txt"
+        return debug_file.exists()
+
+    @property
+    def DEBUG_MODE(self):
+        """动态检查调试模式"""
+        return self.is_debug_mode()
     
     # 缓存配置
     CACHE_DIR = os.getenv("CACHE_DIR")

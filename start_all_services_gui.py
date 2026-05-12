@@ -28,6 +28,8 @@ class ServiceManagerGUI:
 
         self.load_config()
 
+        # 检查调试模式文件是否存在
+        self.debug_mode = tk.BooleanVar(value=self.check_debug_mode_file())
         self.max_lines = 1000
         self.output_buffers = {
             "free8": [],
@@ -54,6 +56,27 @@ class ServiceManagerGUI:
         config_path = Path(__file__).parent / CONFIG_FILE
         with open(config_path, 'w', encoding='utf-8') as f:
             json.dump(self.config, f, indent=4, ensure_ascii=False)
+
+    def check_debug_mode_file(self):
+        """检查调试模式文件是否存在（检查主服务目录）"""
+        debug_file = Path(__file__).parent / "multi_free_api_proxy" / "DEBUG_MODE.txt"
+        return debug_file.exists()
+
+    def toggle_debug_mode(self):
+        """切换调试模式（在主服务目录创建/删除文件）"""
+        debug_file = Path(__file__).parent / "multi_free_api_proxy" / "DEBUG_MODE.txt"
+        if self.debug_mode.get():
+            # 启用调试模式，创建文件
+            debug_file.parent.mkdir(parents=True, exist_ok=True)
+            debug_file.touch()
+            self.append_output("main", "[调试模式] 已启用调试模式", "info")
+            self.append_output("free8", "[调试模式] 已启用调试模式", "info")
+        else:
+            # 禁用调试模式，删除文件
+            if debug_file.exists():
+                debug_file.unlink()
+            self.append_output("main", "[调试模式] 已禁用调试模式", "info")
+            self.append_output("free8", "[调试模式] 已禁用调试模式", "info")
 
     def create_widgets(self):
         control_frame = ttk.Frame(self.root, padding="10")
@@ -82,6 +105,20 @@ class ServiceManagerGUI:
             command=self.on_free8_toggle
         )
         free8_check.pack(side=tk.LEFT, padx=5)
+
+        # 调试模式开关
+        debug_control_frame = ttk.Frame(control_frame)
+        debug_control_frame.pack(side=tk.LEFT, padx=20)
+
+        ttk.Label(debug_control_frame, text="调试模式:").pack(side=tk.LEFT, padx=5)
+
+        debug_check = ttk.Checkbutton(
+            debug_control_frame,
+            text="启用",
+            variable=self.debug_mode,
+            command=self.toggle_debug_mode
+        )
+        debug_check.pack(side=tk.LEFT, padx=5)
 
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
