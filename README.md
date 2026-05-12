@@ -125,12 +125,15 @@ http://localhost:5000/v1
 
 ## 📚 免费 API 列表
 
+感谢以下平台提供免费 API 服务（排名不分先后）：
+
 | API | 服务商 | 模型 | 状态 | 代理 |
 |-----|--------|------|------|------|
 | free1 | OpenRouter | openrouter/free | ✅ | 需要 |
 | free2 | ChatAnywhere | gpt-3.5-turbo | ✅ | 否 |
 | free3 | Free.v36.cm | gpt-4o-mini | ✅ | 否 |
 | free4 | Mistral AI | mistral-small | ✅ | 否 |
+| free5 | iFlow SDK | various | ❌ 已关停 | - |
 | free6 | CSDN | DeepSeek-V3 | ✅ | 否 |
 | free7 | NVIDIA | nvidia/llama | ✅ | 否 |
 | free8 | Friendli.ai | llama-3.3-70B | ✅ | 独立服务 |
@@ -148,8 +151,24 @@ http://localhost:5000/v1
 
 **说明：**
 - ✅ 表示已测试可用
-- "独立服务" 表示需要单独启动服务（free5, free8）
+- ❌ 已关停 表示服务已停止
+- ⚠️ 表示可能存在限制，请以官网为准
+- "独立服务" 表示需要单独启动服务（free8）
 - "需要" 表示需要通过 HTTP 代理访问
+
+---
+
+### 🙏 特别致谢
+
+**free5 - iFlow SDK**：2025年3月正式关停，令人遗憾。这是一个非常优秀的服务，为开发者提供了极佳的体验。感谢 iFlow 团队曾经的付出！
+
+### 💡 文明使用倡议
+
+免费 API 是平台给予开发者的一份珍贵礼物，请大家：
+- **感恩使用**：体验后如项目有收益，建议转付费支持平台可持续发展
+- **节约资源**：避免无意义的重复请求，合理设置参数
+- **遵守规则**：遵守各平台的使用条款，不滥用、不恶意请求
+- **时间就是生命**：免费 API 稳定性有限，如需稳定服务，请选择付费方案
 
 ## 💡 使用示例
 
@@ -174,34 +193,6 @@ curl -X POST http://localhost:5000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
 ```
-
-## 📚 免费 API 列表
-
-| API | 服务商 | 模型 | 状态 | 代理 |
-|-----|--------|------|------|------|
-| free1 | OpenRouter | openrouter/free | ✅ | 需要 |
-| free2 | ChatAnywhere | gpt-3.5-turbo | ✅ | 否 |
-| free3 | Free.v36.cm | gpt-4o-mini | ✅ | 否 |
-| free4 | Mistral AI | mistral-small | ✅ | 否 |
-| free6 | CSDN | DeepSeek-V3 | ✅ | 否 |
-| free7 | NVIDIA | nvidia/llama | ✅ | 否 |
-| free8 | Friendli.ai | llama-3.3-70B | ✅ | 独立服务 |
-| free9 | 火山引擎 | ark-code-latest | ⚠️ | 否 |
-| free10 | 阿里云 Qwen | qwen-turbo | ⚠️ | 否 |
-| free11 | OpenAI兼容 | gpt-4o-mini | ⚠️ | 需代理 |
-| free12 | 硅基流动 | Qwen2.5-7B-Instruct | ⚠️ | 否 |
-| free13 | Volcengine | ark-code-latest | ✅ | 否 |
-| free14 | CogView | cgc-apikey | ✅ | 否 |
-| free15 | Groq | llama-3.3-70b | ✅ | **需要** |
-| free16 | Sambanova | DeepSeek-V3.1 | ✅ | 否 |
-| free17 | Cerebras | llama3.1-8b | ✅ | **需要** |
-| free18 | Google Gemini | gemini-3-flash | ✅ | **需要** |
-| free19-20 | 新增 API | various | ✅ | 否 |
-
-**说明：**
-- ✅ 表示已测试可用
-- "独立服务" 表示需要单独启动服务（free5, free8）
-- "需要" 表示需要通过 HTTP 代理访问
 
 ## ⚙️ 配置选项
 

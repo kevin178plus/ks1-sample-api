@@ -34,3 +34,5 @@ api-proxy-go/stdout.log
 api-proxy-go/stderr.log
 api-proxy-go/startup.log
 /.playwright-mcp
+/.sisyphus/
+/.vscode/
