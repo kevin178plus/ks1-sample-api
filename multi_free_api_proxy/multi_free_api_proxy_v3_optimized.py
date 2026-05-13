@@ -1007,7 +1007,7 @@ def execute_with_free_api(data, message_id, call_id=None):
     def log_prefix(api_name=""):
         timestamp = datetime.now().strftime("%H:%M:%S")
         if api_name:
-            return f"[{timestamp}] [{call_id}] ▶ {api_name}"
+            return f"[{timestamp}] [{call_id}] > {api_name}"
         return f"[{timestamp}] [{call_id}]"
 
     # 日志输出函数 - 自动添加前缀
@@ -1019,11 +1019,11 @@ def execute_with_free_api(data, message_id, call_id=None):
 
     # 错误日志 - 专门记录上游错误
     def _log_upstream_error(api_name, error_type, detail):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] ▶ {api_name} ❌ {error_type}: {detail}")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] > {api_name} X {error_type}: {detail}")
 
     # 成功日志 - 标识上游成功
     def _log_upstream_success(api_name):
-        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] ▶ {api_name} ✓ 成功")
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] [{call_id}] > {api_name} OK")
 
     for attempt in range(config.MAX_RETRIES):
         api_name = get_next_available_api()
