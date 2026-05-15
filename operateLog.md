@@ -1315,7 +1315,7 @@ func loadProxyFromEnv(cfg *Config) {
 | `api-proxy-go/proxy/proxy.go` | executeHTTPRequest 添加代理支持 |
 | `api-proxy-go/upstream/upstream.go` | Test 方法添加代理支持 |
 | `api-proxy-go/config.yaml` | 添加代理配置说明 |
-| `api-proxy-go/api-proxy-go.exe` | 重新编译 |
+| `api-proxy-go/api-proxy.exe` | 重新编译 |
 
 ### 验证方法
 
@@ -1376,7 +1376,7 @@ Go版调试页面 `/debug` 显示 "API 状态" 标签一直显示"正在加载..
 | `api-proxy-go/upstream/upstream.go` | 添加 OpenRouter HTTP头 |
 | `api-proxy-go/upstream/health.go` | 添加代理支持和OpenRouter HTTP头 |
 | `api-proxy-go/config.yaml` | health_check.enabled: false → true |
-| `api-proxy-go/api-proxy-go.exe` | 重新编译 |
+| `api-proxy-go/api-proxy.exe` | 重新编译 |
 
 ### 验证结果
 1. 代理正确加载：HTTP_PROXY 已加载

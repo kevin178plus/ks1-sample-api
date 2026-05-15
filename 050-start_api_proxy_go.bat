@@ -35,9 +35,9 @@ echo.
 
 cd /d "%WORK_DIR%"
 
-if not exist "api-proxy-go.exe" (
-    echo [错误] api-proxy-go.exe 不存在，请先编译
-    echo [提示] 运行: cd api-proxy-go ^&^& go build -o api-proxy-go.exe
+if not exist "api-proxy.exe" (
+    echo [错误] api-proxy.exe 不存在，请先编译
+    echo [提示] 运行: cd api-proxy-go ^&^& go build -o api-proxy.exe
     pause
     exit /b 1
 )
