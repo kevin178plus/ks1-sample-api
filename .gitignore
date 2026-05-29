@@ -36,3 +36,7 @@ api-proxy-go/startup.log
 /.playwright-mcp
 /.sisyphus/
 /.vscode/
+
+# 信息图生成产物（可重新生成）
+/ks1-simple-api-*.png
+/ks1-simple-api-infographic.png
