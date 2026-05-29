@@ -370,6 +370,22 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 - 代理不会缓存任何数据（除非启用调试模式）
 - 修改配置文件后，下一个请求会自动重新加载配置，无需手动重启
 - 调试模式会产生大量文件，建议仅在需要时启用
+- **📅 2026-05-27 检测发现以下上游失效：free6(CSDN, HTTP 400)、free7(NVIDIA, HTTP 410 Gone)、free10(联通云, HTTP 403)、free11(白山智算, HTTP 403)、free14(CGC ChanCloud, DNS 失败)、free18(Gemini, 超时)**
+- **free4(Mistral AI) 反转 use_proxy 后恢复，已更新配置文件**
+- 使用 `python test_upstreams_proxy_swap.py` 可自动检测所有上游状态
+
+## 📊 信息图
+
+项目信息图系列（SenseNova U1 Fast 生成，2K 分辨率）：
+
+| 编号 | 主题 | 文件 |
+|------|------|------|
+| **01** | 项目全景图 | [ks1-simple-api-01-全景图-v2.png](../ks1-simple-api-01-全景图-v2.png) |
+| **02** | 双引擎架构对比 | [ks1-simple-api-02-双引擎架构-v2.png](../ks1-simple-api-02-双引擎架构-v2.png) |
+| **03** | 上游API状态全景 | [ks1-simple-api-03-上游状态全景-v2.png](../ks1-simple-api-03-上游状态全景-v2.png) |
+| **04** | 部署场景与工作流 | [ks1-simple-api-04-部署场景与工作流-v2.png](../ks1-simple-api-04-部署场景与工作流-v2.png) |
+
+> 💡 v2 版本（英文为主）已替换 v1 版本（中文乱码）。生成脚本见根目录 `generate_infographic_01_v2.py` ~ `generate_infographic_04_v2.py`。
 
 ## 故障排除
 
@@ -387,3 +403,5 @@ curl -X POST http://localhost:5000/v1/chat/completions \
 
 - 免费 API 模型会定期变化
 - 访问调试面板查看各 API 状态：http://localhost:5000/debug
+- **当前失效上游（2026-05-27 检测）：free6、free7、free10、free11、free14、free18**
+- **使用 `python test_upstreams_proxy_swap.py` 自动检测并尝试修复**

@@ -99,6 +99,19 @@ http://localhost:5000/v1
 - [free_api_test README](./free_api_test/README.md) - 所有免费 API 详细说明
 - [Go 版本文档](./api-proxy-go/README.md) - Go 版本 API 代理服务文档
 
+## 📊 信息图
+
+使用 SenseNova U1 Fast 生成的项目信息图系列（2K 分辨率 2752×1536）：
+
+| 编号 | 主题 | 文件 |
+|------|------|------|
+| **01** | 项目全景图 — 3大核心数据 + 辐射架构图 | [ks1-simple-api-01-全景图-v2.png](./ks1-simple-api-01-全景图-v2.png) |
+| **02** | 双引擎架构对比 — Python Flask vs Go | [ks1-simple-api-02-双引擎架构-v2.png](./ks1-simple-api-02-双引擎架构-v2.png) |
+| **03** | 上游API状态全景 — 22个上游状态地图 | [ks1-simple-api-03-上游状态全景-v2.png](./ks1-simple-api-03-上游状态全景-v2.png) |
+| **04** | 部署场景与工作流 — 4场景 + 5步流程 | [ks1-simple-api-04-部署场景与工作流-v2.png](./ks1-simple-api-04-部署场景与工作流-v2.png) |
+
+> 💡 v1 版本（中文）因 AI 渲染中文文字存在乱码问题，已用 v2 版本（英文为主）替换。生成脚本见 `generate_infographic_01_v2.py` ~ `generate_infographic_04_v2.py`。
+
 ## 🔧 文件说明
 
 | 文件/目录 | 说明 |
@@ -127,40 +140,49 @@ http://localhost:5000/v1
 
 感谢以下平台提供免费 API 服务（排名不分先后）：
 
-| API | 服务商 | 模型 | 状态 | 代理 |
-|-----|--------|------|------|------|
-| free1 | OpenRouter | openrouter/free | ✅ | 需要 |
-| free2 | ChatAnywhere | gpt-3.5-turbo | ✅ | 否 |
-| free3 | Free.v36.cm | gpt-4o-mini | ✅ | 否 |
-| free4 | Mistral AI | mistral-small | ✅ | 否 |
-| free5 | iFlow SDK | various | ❌ 已关停 | - |
-| free6 | CSDN | DeepSeek-V3 | ✅ | 否 |
-| free7 | NVIDIA | nvidia/llama | ✅ | 否 |
-| free8 | Friendli.ai | llama-3.3-70B | ✅ | 独立服务 |
-| free9 | 火山引擎 | ark-code-latest | ⚠️ | 否 |
-| free10 | 阿里云 Qwen | qwen-turbo | ⚠️ | 否 |
-| free11 | OpenAI兼容 | gpt-4o-mini | ⚠️ | 需代理 |
-| free12 | 硅基流动 | Qwen2.5-7B-Instruct | ⚠️ | 否 |
-| free13 | Volcengine | ark-code-latest | ✅ | 否 |
-| free14 | CogView | cgc-apikey | ✅ | 否 |
-| free15 | Groq | llama-3.3-70b | ✅ | **需要** |
-| free16 | Sambanova | DeepSeek-V3.1 | ✅ | 否 |
-| free17 | Cerebras | llama3.1-8b | ✅ | **需要** |
-| free18 | Google Gemini | gemini-3-flash | ✅ | **需要** |
-| free19-20 | 新增 API | various | ✅ | 否 |
+> **📅 最后检测时间：2026-05-27** — 使用 `test_upstreams_proxy_swap.py` 自动测试，对连接失败的上游尝试反转 `use_proxy` 参数再测。
+
+| API | 服务商 | 模型 | 状态 | 代理 | 备注 |
+|-----|--------|------|------|------|------|
+| free1 | OpenRouter | openrouter/free | ✅ | 需要 | |
+| free2 | ChatAnywhere | gpt-3.5-turbo | ✅ | 否 | |
+| free3 | Free.v36.cm | gpt-4o-mini | ✅ | 否 | |
+| free4 | Mistral AI | mistral-small | ✅ | **需要** | 🔧 2026-05-27 反转 use_proxy 后恢复 |
+| free5 | iFlow SDK | various | ❌ 已关停 | - | |
+| free6 | CSDN | DeepSeek-V3 | ⛔ 失效 | 否 | HTTP 400，接口可能变更 |
+| free7 | NVIDIA | minimax-m2.5 | ⛔ 失效 | 否 | HTTP 410 Gone，接口已下线 |
+| free8 | Friendli.ai | Qwen3-235B | ✅ | 否 | 独立服务 |
+| free9 | 火山引擎 | ark-code-latest | ⚠️ | 否 | |
+| free10 | 联通云 | Minimax-M2.5 | ⛔ 失效 | 否 | HTTP 403，需认证或已限流 |
+| free11 | 白山智算 | DeepSeek-R1 | ⛔ 失效 | 否 | HTTP 403，需认证 |
+| free12 | OpenCode AI | minimax-m2.5-free | ✅ | 否 | |
+| free13 | atomgit | Qwen3.5 | ✅ | 否 | |
+| free14 | CGC ChanCloud | Nemotron-3 | ⛔ 失效 | 否 | DNS/连接失败，服务可能已关闭 |
+| free15 | Groq | llama-3.3-70b | ✅ | **需要** | |
+| free16 | Sambanova | DeepSeek-V3.1 | ✅ | 否 | |
+| free17 | Cerebras | llama3.1-8b | ✅ | **需要** | |
+| free18 | Google Gemini | gemini-3-flash | ⚠️ 超时 | **需要** | 网络超时，反转代理后仍失败 |
+| free19 | Cohere | command-a | ✅ | **需要** | |
+| free20 | LongCat | LongCat-Flash | ✅ | 否 | |
+| free21 | FreeModel | freemodel-default | ✅ | **需要** | |
+| free22 | 商汤日日新 | sensenova-6.7 | ✅ | 否 | |
 
 **说明：**
 - ✅ 表示已测试可用
+- ⛔ 失效 表示当前无法连接（HTTP 错误/DNS失败）
+- ⚠️ 表示连接不稳定或需要进一步排查
 - ❌ 已关停 表示服务已停止
-- ⚠️ 表示可能存在限制，请以官网为准
 - "独立服务" 表示需要单独启动服务（free8）
 - "需要" 表示需要通过 HTTP 代理访问
+- 🔧 表示本次检测中通过反转 `use_proxy` 参数修复
 
 ---
 
 ### 🙏 特别致谢
 
 **free5 - iFlow SDK**：2026年3月正式关停，令人遗憾。这是一个非常优秀的服务，为开发者提供了极佳的体验。感谢 iFlow 团队曾经的付出！
+
+**free7 - NVIDIA**：2026年5月返回 HTTP 410 Gone，接口已下线。感谢 NVIDIA 曾经提供的免费 API 服务！
 
 ### 💡 文明使用倡议
 
@@ -259,7 +281,9 @@ python daemon.py restart  # 重启守护进程
 - 免费模型可能随时变化，建议定期检查各平台官网
 - 调试模式会产生大量文件，建议仅在需要时启用
 - 代理服务默认监听 `localhost:5000`，如需外网访问需修改代码
-- 某些 API（如 free15, free17, free18）需要通过代理访问
+- 某些 API（如 free15, free17, free18, free21）需要通过代理访问
+- **2026-05-27 检测发现 free6/free7/free10/free11/free14 已失效，free18 超时，free4 需开启代理**
+- 使用 `test_upstreams_proxy_swap.py` 可自动检测所有上游状态并尝试反转代理参数修复
 
 ## 🆘 故障排除
 

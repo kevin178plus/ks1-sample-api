@@ -40,25 +40,25 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Base URL**: https://api.mistral.ai
 - **Models**: mistral-small-latest, mistral-medium-latest, mistral-large-latest, open-mistral-nemo
 - **Features**: High-performance European AI models
-- **Status**: ✅ Active
-- **Proxy**: No
+- **Status**: ✅ Active — 🔧 2026-05-27 反转 use_proxy 后恢复（原配置超时）
+- **Proxy**: **Required** (127.0.0.1:7897)
 - **Documentation**: See [free4/README.md](free4/README.md)
 
-### free6 - CSDN API
+### free6 - CSDN API ⛔
 - **Provider**: CSDN
 - **Base URL**: https://models.csdn.net
 - **Models**: Deepseek-V3
 - **Features**: Deepseek model access
-- **Status**: ✅ Active
+- **Status**: ⛔ 失效 — HTTP 400，接口格式可能已变更
 - **Proxy**: No
 - **Documentation**: See [free6/config.py](free6/config.py)
 
-### free7 - NVIDIA API
+### free7 - NVIDIA API ⛔
 - **Provider**: NVIDIA
-- **Base URL**: https://integrate.api.nvidia.io
-- **Models**: Various NVIDIA hosted models
+- **Base URL**: https://integrate.api.nvidia.com
+- **Models**: minimax-m2.5
 - **Features**: High-performance GPU-accelerated inference
-- **Status**: ✅ Active
+- **Status**: ⛔ 失效 — HTTP 410 Gone，接口已下线
 - **Proxy**: No
 - **Documentation**: See [free7/README.md](free7/README.md)
 
@@ -79,14 +79,18 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Status**: ❌ Coding Plan expired in March 2026
 - **Documentation**: See [free9/README.md](free9/README.md)
 
-### free10 - API 10
-- **Provider**: Unknown
-- **Status**: ✅ Active
+### free10 - 联通云 API ⛔
+- **Provider**: 联通云 (CUCC)
+- **Base URL**: https://aigw-gzgy2.cucloud.cn:8443
+- **Models**: unicom-cloud/Minimax-M2.5
+- **Status**: ⛔ 失效 — HTTP 403，需认证或已限流
 - **Proxy**: No
 
-### free11 - API 11
-- **Provider**: Unknown
-- **Status**: ✅ Active
+### free11 - 白山智算 API ⛔
+- **Provider**: 白山智算 (EdgeFn)
+- **Base URL**: https://api.edgefn.net
+- **Models**: DeepSeek-R1-0528-Qwen3-8B
+- **Status**: ⛔ 失效 — HTTP 403，需认证
 - **Proxy**: No
 
 ### free12 - API 12
@@ -103,12 +107,12 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Proxy**: No
 - **Documentation**: See [free13/README.md](free13/README.md)
 
-### free14 - CogView API
-- **Provider**: CogView
-- **Base URL**: https://cogview.api
-- **Models**: cgc-apikey
-- **Features**: CogView API access
-- **Status**: ✅ Active
+### free14 - CGC ChanCloud AI API ⛔
+- **Provider**: CGC ChanCloud
+- **Base URL**: https://cgc.chancloud.com/cgc/api/public/ai/server
+- **Models**: Nemotron-3-Super-120B-A12B
+- **Features**: CogView/ChanCloud AI access
+- **Status**: ⛔ 失效 — DNS/连接失败，服务可能已关闭
 - **Proxy**: No
 - **Documentation**: See [free14/config.py](free14/config.py)
 
@@ -139,12 +143,12 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Proxy**: **Required** (127.0.0.1:7897)
 - **Documentation**: See [free17/README.md](free17/README.md)
 
-### free18 - Google Gemini API ⚡
+### free18 - Google Gemini API ⚠️
 - **Provider**: Google
 - **Base URL**: https://generativelanguage.googleapis.com/v1beta
 - **Models**: gemini-3-flash-preview, gemini-2.0-flash-exp, gemini-1.5-flash
 - **Features**: Advanced multimodal AI models
-- **Status**: ✅ Active
+- **Status**: ⚠️ 超时 — 连接超时，反转代理后仍失败，需排查网络
 - **Proxy**: **Required** (127.0.0.1:7897)
 - **Documentation**: See [free18/README.md](free18/README.md)
 
@@ -213,7 +217,16 @@ FREEMODEL_API_KEY=your_freemodel_api_key
 To disable a specific API service, simply comment out or delete the corresponding API_KEY line in the `.env` file. The system will automatically skip services without configured API keys.
 
 Currently disabled services:
-- free9 (火山方舟 Coding Plan): Coding Plan expired in March 2026
+- free5 (iFlow SDK)：2026年3月正式关停
+- free7 (NVIDIA)：2026年5月返回 HTTP 410 Gone，接口已下线
+- free9 (火山方舟 Coding Plan)：Coding Plan 2026年3月过期
+
+⚠️ 以下服务当前连接失败，建议暂时禁用或排查：
+- free6 (CSDN)：HTTP 400
+- free10 (联通云)：HTTP 403
+- free11 (白山智算)：HTTP 403
+- free14 (CGC ChanCloud)：DNS/连接失败
+- free18 (Google Gemini)：连接超时
 
 For example, to disable a service:
 ```properties
@@ -257,6 +270,7 @@ See [../multi_free_api_proxy/MULTI_FREE_API_README.md](../multi_free_api_proxy/M
 - Monitor your usage through each provider's dashboard
 - For production use, consider upgrading to paid plans
 - Some APIs may require proxy configuration (see individual documentation)
+- **Use `test_upstreams_proxy_swap.py` in project root to automatically test all upstreams and try reversing `use_proxy` for failed ones**
 
 ## Multi API Proxy Integration
 
@@ -314,29 +328,53 @@ RESPONSE_FORMAT = {
 
 ## 📊 API 状态概览
 
-| API | Provider | Model | Proxy | Status |
-|-----|----------|-------|-------|--------|
-| free1 | OpenRouter | openrouter/free | Yes | ✅ |
-| free2 | ChatAnywhere | gpt-3.5-turbo | No | ✅ |
-| free3 | Free.v36.cm | gpt-4o-mini | No | ✅ |
-| free4 | Mistral AI | mistral-small | No | ✅ |
-| free6 | CSDN | DeepSeek-V3 | No | ✅ |
-| free7 | NVIDIA | nvidia/llama | No | ✅ |
-| free8 | Friendli.ai | llama-3.3-70B | - | ✅* |
-| free9 | Volcengine | ark-code-latest | - | ❌ |
-| free10-12 | Unknown | various | No | ✅ |
-| free13 | Volcengine | ark-code-latest | No | ✅ |
-| free14 | CogView | cgc-apikey | No | ✅ |
-| free15 | Groq | llama-3.3-70b | Yes | ✅ |
-| free16 | Sambanova | DeepSeek-V3.1 | No | ✅ |
-| free17 | Cerebras | llama3.1-8b | Yes | ✅ |
-| free18 | Google Gemini | gemini-3-flash | Yes | ✅ |
-| free19 | Unknown | various | No | ✅ |
-| free20 | LongCat | openrouter/free | No | ✅ |
-| free21 | FreeModel | freemodel | No | ✅ |
+> **📅 最后检测时间：2026-05-27** — 使用 `test_upstreams_proxy_swap.py` 自动测试
+
+| API | Provider | Model | Proxy | Status | 备注 |
+|-----|----------|-------|-------|--------|------|
+| free1 | OpenRouter | openrouter/free | Yes | ✅ | |
+| free2 | ChatAnywhere | gpt-3.5-turbo | No | ✅ | |
+| free3 | Free.v36.cm | gpt-4o-mini | No | ✅ | |
+| free4 | Mistral AI | mistral-small | **Yes** | ✅ | 🔧 反转 use_proxy 后恢复 |
+| free5 | iFlow SDK | various | - | ❌ 已关停 | |
+| free6 | CSDN | DeepSeek-V3 | No | ⛔ 失效 | HTTP 400 |
+| free7 | NVIDIA | minimax-m2.5 | No | ⛔ 失效 | HTTP 410 Gone |
+| free8 | Friendli.ai | Qwen3-235B | - | ✅* | 独立服务 |
+| free9 | Volcengine | ark-code-latest | - | ❌ | Coding Plan 2026年3月过期 |
+| free10 | 联通云 | Minimax-M2.5 | No | ⛔ 失效 | HTTP 403 |
+| free11 | 白山智算 | DeepSeek-R1 | No | ⛔ 失效 | HTTP 403 |
+| free12 | OpenCode AI | minimax-m2.5-free | No | ✅ | |
+| free13 | atomgit | Qwen3.5 | No | ✅ | |
+| free14 | CGC ChanCloud | Nemotron-3 | No | ⛔ 失效 | DNS/连接失败 |
+| free15 | Groq | llama-3.3-70b | Yes | ✅ | |
+| free16 | Sambanova | DeepSeek-V3.1 | No | ✅ | |
+| free17 | Cerebras | llama3.1-8b | Yes | ✅ | |
+| free18 | Google Gemini | gemini-3-flash | Yes | ⚠️ 超时 | 反转代理后仍超时 |
+| free19 | Cohere | command-a | Yes | ✅ | |
+| free20 | LongCat | LongCat-Flash | No | ✅ | |
+| free21 | FreeModel | freemodel-default | Yes | ✅ | |
+| free22 | 商汤日日新 | sensenova-6.7 | No | ✅ | |
 
 **Legend:**
 - ✅ Active - Service is available
+- ⛔ 失效 - Connection failed (HTTP error/DNS failure)
+
+---
+
+## 📊 Infographics
+
+Project infographics generated with SenseNova U1 Fast (2K resolution 2752×1536):
+
+| # | Topic | File |
+|---|-------|------|
+| **01** | Project Overview — 3 core metrics + hub architecture | [ks1-simple-api-01-全景图-v2.png](../ks1-simple-api-01-全景图-v2.png) |
+| **02** | Dual Engine — Python Flask vs Go comparison | [ks1-simple-api-02-双引擎架构-v2.png](../ks1-simple-api-02-双引擎架构-v2.png) |
+| **03** | Upstream Status Map — 22 upstreams status grid | [ks1-simple-api-03-上游状态全景-v2.png](../ks1-simple-api-03-上游状态全景-v2.png) |
+| **04** | Deployment Scenarios & Workflow — 4 scenarios + 5-step flow | [ks1-simple-api-04-部署场景与工作流-v2.png](../ks1-simple-api-04-部署场景与工作流-v2.png) |
+
+> 💡 v1 versions (Chinese text) had garbled text issues from AI rendering. v2 versions (English-dominant) are the recommended replacements. Generation scripts: `generate_infographic_01_v2.py` ~ `generate_infographic_04_v2.py` in project root.
+- ⚠️ 超时 - Connection timeout, needs investigation
 - ❌ Disabled - Service is disabled or expired
 - * - Independent service (runs on separate port)
 - Yes - Requires HTTP proxy (127.0.0.1:7897)
+- 🔧 - Fixed by reversing `use_proxy` parameter during this test

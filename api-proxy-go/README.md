@@ -387,6 +387,9 @@ curl http://localhost:5000/debug/apis
 2. 检查上游配置是否正确
 3. 查看健康检查日志
 4. 访问调试面板查看状态
+5. **📅 2026-05-27 检测发现以下上游失效：free6(CSDN)、free7(NVIDIA)、free10(联通云)、free11(白山智算)、free14(CGC ChanCloud)、free18(Gemini)**
+6. **free4(Mistral AI) 已修复：反转 use_proxy 参数**
+7. 使用项目根目录的 `python test_upstreams_proxy_swap.py` 自动检测所有上游
 
 ### 请求失败
 
@@ -399,6 +402,19 @@ curl http://localhost:5000/debug/apis
 1. 检查配置文件权限
 2. 确认配置文件语法正确
 3. 查看日志输出
+
+## 📊 信息图
+
+项目信息图系列（SenseNova U1 Fast 生成，2K 分辨率 2752×1536）：
+
+| 编号 | 主题 | 文件 |
+|------|------|------|
+| **01** | 项目全景图 | [ks1-simple-api-01-全景图-v2.png](../ks1-simple-api-01-全景图-v2.png) |
+| **02** | 双引擎架构对比 | [ks1-simple-api-02-双引擎架构-v2.png](../ks1-simple-api-02-双引擎架构-v2.png) |
+| **03** | 上游API状态全景 | [ks1-simple-api-03-上游状态全景-v2.png](../ks1-simple-api-03-上游状态全景-v2.png) |
+| **04** | 部署场景与工作流 | [ks1-simple-api-04-部署场景与工作流-v2.png](../ks1-simple-api-04-部署场景与工作流-v2.png) |
+
+> 💡 v2 版本（英文为主）已替换 v1 版本（中文乱码）。生成脚本见根目录 `generate_infographic_01_v2.py` ~ `generate_infographic_04_v2.py`。
 
 ## 📝 功能说明
 
