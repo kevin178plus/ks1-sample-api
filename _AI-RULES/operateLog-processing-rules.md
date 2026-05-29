@@ -6,8 +6,8 @@
 ## 基本原则
 
 ### 1. 时间获取规则
-- 严格按照 `TIME_RULES.md` 规则获取当前时间
-- 使用命令：`php -r "echo date('Y-m-d H:i:s');"`
+- 严格按照 `time_rules.md` 规则获取当前时间
+- Python 项目使用：`python get_local_time.py --iso`
 - 禁止使用硬编码日期
 
 ### 2. 日志拆分规则
@@ -56,7 +56,7 @@
 
 1. **获取当前时间**
    ```bash
-   php -r "echo date('Y-m-d H:i:s');"
+   python get_local_time.py --iso
    ```
 
 2. **分析待处理记录**
@@ -111,7 +111,7 @@ logs/
 
 ### 获取时间
 ```bash
-php -r "echo date('Y-m-d H:i:s');"
+python get_local_time.py --iso
 ```
 
 ### 查找历史记录
