@@ -17,6 +17,10 @@ test_result.txt
 **/.env.*
 !**/.env.example
 
+# 含硬编码密钥的临时文件（已从仓库移除）
+check1.py
+v1/.env
+
 # 上游配置目录中含 api_key 明文，统一改用环境变量；保留 example 作为模板
 api-proxy-go/upstreams/*/config.yaml
 !api-proxy-go/upstreams/example/config.yaml
