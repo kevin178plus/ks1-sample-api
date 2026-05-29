@@ -44,3 +44,10 @@ api-proxy-go/startup.log
 # 信息图生成产物（可重新生成）
 /ks1-simple-api-*.png
 /ks1-simple-api-infographic.png
+/ks1-simple-api.zip
+
+# 临时测试文件
+/test_result.txt
+/test_llm*.py
+/test_local_llm*.py
+/test_main_service.bat
