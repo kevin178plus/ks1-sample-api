@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/kevin178plus/api-proxy-go/config"
 	"github.com/kevin178plus/api-proxy-go/logger"
@@ -20,6 +21,7 @@ type DebugHandler struct {
 	keyStatsMgr *stats.KeyStatsManager
 	logger      *logger.Logger
 	healthStatus string // 健康检查状态: "checking", "disabled", "enabled"
+	keyLog      *KeyLogBuffer // 关键日志缓冲区
 }
 
 // NewDebugHandler 创建调试页面处理器
@@ -31,13 +33,20 @@ func NewDebugHandler(cfg *config.Config, manager *upstream.Manager, statsMgr *st
 		keyStatsMgr: keyStatsMgr,
 		logger:      logger.NewLogger(),
 		healthStatus: "disabled",
+		keyLog:      NewKeyLogBuffer(200), // 保留最近 200 条关键日志
 	}
-	
+
 	// 设置健康检查状态
 	if cfg.HealthCheck.Enabled {
 		h.healthStatus = "enabled"
 	}
-	
+
+	// 将关键日志记录器注入到上游管理器，自动记录上游状态变化
+	h.manager.SetKeyLogBuffer(h.keyLog)
+
+	// 启动定时统计信息日志（每 60 秒记录一次）
+	go h.periodicStatsLog()
+
 	return h
 }
 
@@ -47,7 +56,9 @@ func (dh *DebugHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/stats", dh.handleStats)
 	mux.HandleFunc("/debug/apis", dh.handleAPIs)
 	mux.HandleFunc("/debug/concurrency", dh.handleConcurrency)
+	mux.HandleFunc("/debug/logs", dh.handleKeyLogs)
 	mux.HandleFunc("/debug/api/test/", dh.handleTestSingle)
+	mux.HandleFunc("/debug/api/test/all", dh.handleTestAll)
 }
 
 // handleDebugPage 处理调试页面
@@ -141,6 +152,7 @@ func (dh *DebugHandler) handleDebugPage(w http.ResponseWriter, r *http.Request) 
     <div class="tabs">
         <div class="tab active" onclick="showTab('stats')">统计信息</div>
         <div class="tab" onclick="showTab('apis')">API 状态</div>
+        <div class="tab" onclick="showTab('logs')">关键日志</div>
     </div>
 
     <div id="tab-stats" class="tab-content active">
@@ -148,6 +160,10 @@ func (dh *DebugHandler) handleDebugPage(w http.ResponseWriter, r *http.Request) 
     </div>
 
     <div id="tab-apis" class="tab-content">
+        <div style="margin-bottom: 12px;">
+            <button class="test-btn" onclick="testAllApis()" id="testAllBtn" style="background-color:#007bff;">一键全部重新测试</button>
+            <span id="testAllStatus" style="font-size:13px; color:#666; margin-left:10px;"></span>
+        </div>
         <div class="sub-tabs">
             <div class="sub-tab active" id="subTabAvailable" onclick="showSubTab('available')">
                 可用 <span class="sub-tab-count" id="availableCount">0</span>
@@ -158,6 +174,26 @@ func (dh *DebugHandler) handleDebugPage(w http.ResponseWriter, r *http.Request) 
         </div>
         <div id="content-apis-available"></div>
         <div id="content-apis-unavailable" style="display:none;"></div>
+    </div>
+
+    <div id="tab-logs" class="tab-content">
+        <div style="margin-bottom: 12px; display: flex; gap: 10px; align-items: center;">
+            <button class="refresh-btn" onclick="loadKeyLogs()" style="background-color:#007bff;">刷新日志</button>
+            <span style="font-size:13px; color:#666;">显示最近的关键事件，包括统计信息和上游状态变化</span>
+        </div>
+        <div class="container" style="max-height: 600px; overflow-y: auto;">
+            <table style="width:100%; border-collapse: collapse; font-size:13px;">
+                <thead>
+                    <tr style="background:#e7f3ff;">
+                        <th style="padding:8px; text-align:left; border-bottom:2px solid #007bff; width:80px;">时间</th>
+                        <th style="padding:8px; text-align:left; border-bottom:2px solid #007bff;">事件</th>
+                    </tr>
+                </thead>
+                <tbody id="keyLogBody">
+                    <tr><td colspan="2" style="padding:20px; text-align:center; color:#999;">加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
     </div>
     
     <script>
@@ -219,6 +255,35 @@ func (dh *DebugHandler) handleDebugPage(w http.ResponseWriter, r *http.Request) 
                     btn.disabled = false;
                     btn.textContent = '重新测试';
                     btn.classList.remove('testing');
+                });
+        }
+
+        function testAllApis() {
+            const btn = document.getElementById('testAllBtn');
+            const status = document.getElementById('testAllStatus');
+            btn.disabled = true;
+            btn.textContent = '全部测试中...';
+            status.textContent = '正在测试所有 API，请稍候...';
+
+            fetch('/debug/api/test/all', { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    const results = data.results || {};
+                    let successCount = 0, failCount = 0;
+                    for (const name in results) {
+                        if (results[name]) successCount++;
+                        else failCount++;
+                    }
+                    status.textContent = '完成: ' + successCount + ' 可用, ' + failCount + ' 不可用';
+                    loadAPIs();
+                    loadKeyLogs();
+                })
+                .catch(err => {
+                    status.textContent = '测试失败: ' + err;
+                })
+                .finally(() => {
+                    btn.disabled = false;
+                    btn.textContent = '一键全部重新测试';
                 });
         }
 
@@ -317,11 +382,40 @@ func (dh *DebugHandler) handleDebugPage(w http.ResponseWriter, r *http.Request) 
             }
         }
         
+        async function loadKeyLogs() {
+            try {
+                const response = await fetch('/debug/logs');
+                const logs = await response.json();
+                const tbody = document.getElementById('keyLogBody');
+                if (!logs || logs.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="2" style="padding:20px; text-align:center; color:#999;">暂无日志记录</td></tr>';
+                    return;
+                }
+                // 倒序显示（最新的在前面）
+                const reversed = [...logs].reverse();
+                tbody.innerHTML = reversed.map(log =>
+                    '<tr>' +
+                    '<td style="padding:6px 8px; border-bottom:1px solid #eee; color:#007bff; font-family:monospace; white-space:nowrap;">' + log.timestamp + '</td>' +
+                    '<td style="padding:6px 8px; border-bottom:1px solid #eee;">' + escapeHtml(log.message) + '</td>' +
+                    '</tr>'
+                ).join('');
+            } catch (e) {
+                document.getElementById('keyLogBody').innerHTML = '<tr><td colspan="2" style="padding:20px; text-align:center; color:red;">加载日志失败: ' + e.message + '</td></tr>';
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
         // 初始化
         document.getElementById('timestamp').textContent = new Date().toLocaleString('zh-CN');
         updateHealthStatus();
         loadStats();
         loadAPIs();
+        loadKeyLogs();
     </script>
 </body>
 </html>`
@@ -428,7 +522,7 @@ func (dh *DebugHandler) handleTestSingle(w http.ResponseWriter, r *http.Request)
 	// 从 URL 路径提取 API 名称：/debug/api/test/free1
 	path := r.URL.Path
 	apiName := strings.TrimPrefix(path, "/debug/api/test/")
-	if apiName == "" {
+	if apiName == "" || apiName == "all" {
 		http.Error(w, "API name required", http.StatusBadRequest)
 		return
 	}
@@ -436,9 +530,122 @@ func (dh *DebugHandler) handleTestSingle(w http.ResponseWriter, r *http.Request)
 	// 调用上游管理器的测试方法
 	result := dh.manager.Test(apiName)
 
+	// 记录关键日志
+	if result {
+		dh.keyLog.Appendf("%s 测试成功", apiName)
+	} else {
+		_, _, _, consecutive, _, exists := dh.manager.GetUpstreamInfo(apiName)
+		if exists {
+			dh.keyLog.Appendf("%s 测试失败，连续失败 %d 次", apiName, consecutive)
+		} else {
+			dh.keyLog.Appendf("%s 测试失败", apiName)
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": result,
 		"name":    apiName,
 	})
+}
+
+// handleTestAll 测试所有 API
+func (dh *DebugHandler) handleTestAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !dh.config.Debug.Enabled {
+		http.Error(w, "Debug mode not enabled", http.StatusForbidden)
+		return
+	}
+
+	dh.keyLog.Append("开始全部重新测试...")
+
+	// 测试所有上游
+	results := make(map[string]bool)
+	successCount := 0
+	failCount := 0
+
+	upstreams := dh.manager.GetAll()
+	for name := range upstreams {
+		result := dh.manager.Test(name)
+		results[name] = result
+		if result {
+			successCount++
+		} else {
+			failCount++
+		}
+	}
+
+	// 更新可用列表
+	dh.manager.UpdateAvailable()
+
+	// 记录关键日志
+	dh.keyLog.Appendf("全部测试完成: %d 可用, %d 不可用", successCount, failCount)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"success": true,
+		"results": results,
+	})
+}
+
+// periodicStatsLog 定时记录统计信息到关键日志
+func (dh *DebugHandler) periodicStatsLog() {
+	// 首次等待 30 秒，让服务稳定
+	time.Sleep(30 * time.Second)
+
+	ticker := time.NewTicker(60 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			statsData := dh.statsMgr.GetAllStats()
+			var totalCalls, successCount, failureCount, timeoutCount int
+			for _, value := range statsData {
+				if v, ok := value.(map[string]interface{}); ok {
+					success := getInt(v, "success_count")
+					failure := getInt(v, "failure_count")
+					timeout := getInt(v, "timeout_count")
+					totalCalls += success + failure + timeout
+					successCount += success
+					failureCount += failure
+					timeoutCount += timeout
+				}
+			}
+			dh.keyLog.Appendf("统计信息 总调用次数:%d 成功次数:%d 失败次数:%d 超时次数:%d",
+				totalCalls, successCount, failureCount, timeoutCount)
+		}
+	}
+}
+
+// getInt 从 map 中安全获取 int 值
+func getInt(m map[string]interface{}, key string) int {
+	if v, ok := m[key]; ok {
+		switch val := v.(type) {
+		case float64:
+			return int(val)
+		case int:
+			return val
+		}
+	}
+	return 0
+}
+
+// handleKeyLogs 处理关键日志请求
+func (dh *DebugHandler) handleKeyLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if !dh.config.Debug.Enabled {
+		http.Error(w, "Debug mode not enabled", http.StatusForbidden)
+		return
+	}
+
+	logs := dh.keyLog.GetAll()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(logs)
 }
