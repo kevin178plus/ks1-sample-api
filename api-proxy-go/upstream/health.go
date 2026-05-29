@@ -125,7 +125,7 @@ func (h *HealthChecker) checkUpstream(name string) {
 
 	// OpenRouter 需要 HTTP-Referer 和 X-Title 头
 	if strings.Contains(upstream.Config.Address, "openrouter.ai") {
-		req.Header.Set("HTTP-Referer", "http://localhost:5000")
+		req.Header.Set("HTTP-Referer", "http://localhost:5001")
 		req.Header.Set("X-Title", "API-Proxy-Go")
 	}
 
@@ -177,6 +177,9 @@ func (h *HealthChecker) markAvailable(upstream *Upstream, result string) {
 	if wasUnavailable {
 		log.Printf("[健康检查] %s 已恢复", upstream.Name)
 		h.manager.updateAvailableList()
+		if h.manager.keyLogBuf != nil {
+			h.manager.keyLogBuf.Appendf("健康检查: %s 已恢复可用", upstream.Name)
+		}
 	}
 }
 
@@ -193,5 +196,8 @@ func (h *HealthChecker) markUnavailable(upstream *Upstream, result string) {
 	if wasAvailable {
 		log.Printf("[健康检查] %s 已失效: %s", upstream.Name, result)
 		h.manager.updateAvailableList()
+		if h.manager.keyLogBuf != nil {
+			h.manager.keyLogBuf.Appendf("健康检查: %s 已失效 (%s)", upstream.Name, result)
+		}
 	}
 }

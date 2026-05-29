@@ -39,6 +39,22 @@ type Manager struct {
 	// 健康检查
 	healthCheckCtx    context.Context
 	healthCheckCancel context.CancelFunc
+
+	// 关键日志缓冲区（由外部注入，用于记录上游状态变化）
+	keyLogBuf KeyLogAppender
+}
+
+// KeyLogAppender 关键日志追加接口
+type KeyLogAppender interface {
+	Append(message string)
+	Appendf(format string, args ...interface{})
+}
+
+// SetKeyLogBuffer 设置关键日志缓冲区
+func (m *Manager) SetKeyLogBuffer(buf KeyLogAppender) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.keyLogBuf = buf
 }
 
 // NewManager 创建上游管理器
@@ -160,7 +176,7 @@ if useSDK {
 
 	// OpenRouter 需要 HTTP-Referer 和 X-Title 头
 	if strings.Contains(config.Address, "openrouter.ai") {
-		req.Header.Set("HTTP-Referer", "http://localhost:5000")
+		req.Header.Set("HTTP-Referer", "http://localhost:5001")
 		req.Header.Set("X-Title", "API-Proxy-Go")
 	}
 
@@ -226,6 +242,15 @@ if useSDK {
 
 	// 更新可用列表
 	m.UpdateAvailable()
+
+	// 记录关键日志
+	if m.keyLogBuf != nil {
+		if success {
+			m.keyLogBuf.Appendf("%s 测试成功 (%s)", name, config.Model)
+		} else {
+			m.keyLogBuf.Appendf("%s 测试失败: %s", name, testResult)
+		}
+	}
 
 	return success
 }
@@ -342,6 +367,11 @@ func (m *Manager) MarkFailure(name string) {
 		upstream.Available = false
 		upstream.mu.Unlock()
 		m.updateAvailableList()
+
+		// 记录关键日志
+		if m.keyLogBuf != nil {
+			m.keyLogBuf.Appendf("%s 调用失败，连续失败 %d 次，状态转为不可用", name, consecutive)
+		}
 	}
 }
 
@@ -363,7 +393,14 @@ func (m *Manager) MarkSuccess(name string) {
 	upstream.mu.RUnlock()
 
 	if wasUnavailable {
-		m.Test(name)
+		result := m.Test(name)
+		if m.keyLogBuf != nil {
+			if result {
+				m.keyLogBuf.Appendf("%s 已自动恢复可用", name)
+			} else {
+				m.keyLogBuf.Appendf("%s 尝试自动恢复失败", name)
+			}
+		}
 	}
 }
 
