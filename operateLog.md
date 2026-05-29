@@ -1524,3 +1524,54 @@ CACHE_DIR=D:\my_cache
 | 无 R:\ + 设置环境变量 | `CACHE_DIR` 指定路径 |
 | 其他情况 | `{项目根目录}/cache` |
 
+---
+
+## 2026-05-29 08:48:29 - Go版功能增强：端口变更、调试页一键测试、关键日志
+
+### 操作内容
+
+**1. 创建版本功能对比文档**
+- 文件：`版本功能对比.md`
+- 全面对比 Go 版 (api-proxy-go) 与 Python 版 (multi_free_api_proxy) 的架构、功能、上游管理、调试面板、统计日志、性能资源、部署等维度
+
+**2. Go版默认端口 8080 → 5001**
+- `config/types.go` - DefaultConfig 默认监听改为 :5001
+- `config.yaml` - listen 改为 :5001
+- `config/config_test.go` - 测试断言更新
+- `upstream/upstream.go` - HTTP-Referer 更新
+- `upstream/health.go` - HTTP-Referer 更新
+- `test_api_proxy.py` - BASE_URL 更新
+- `migrate_config.py` - 模板更新
+
+**3. 调试面板新增「一键全部重新测试」按钮**
+- `web/debug.go` - 新增 `/debug/api/test/all` POST 端点
+- API 状态 tab 上方添加蓝色按钮，点击后测试所有上游
+- 完成后刷新 API 列表和关键日志
+
+**4. 调试面板新增「关键日志」tab**
+- `web/keylog.go` - 新建关键日志环形缓冲区（保留 200 条）
+- `web/debug.go` - 添加 `/debug/logs` 端点、定时统计日志（60 秒周期）、HTML/JS
+- `upstream/upstream.go` - 添加 KeyLogAppender 接口，在 Test/MarkFailure/MarkSuccess 中记录关键事件
+- `upstream/health.go` - 健康检查状态变化时记录关键日志
+- 日志格式：`HH:mm:ss 统计信息 总调用次数:N 成功次数:N 失败次数:N 超时次数:N`
+- 日志格式：`HH:mm:ss freeX 调用失败，连续失败 N 次，状态转为不可用`
+
+### 涉及文件
+- `api-proxy-go/web/debug.go` - 调试页面核心（新增 3 个端点 + HTML/JS 更新）
+- `api-proxy-go/web/keylog.go` - 新增关键日志缓冲模块
+- `api-proxy-go/upstream/upstream.go` - KeyLogAppender 接口 + 关键日志钩子
+- `api-proxy-go/upstream/health.go` - 健康检查日志钩子
+- `api-proxy-go/config/types.go` - 默认端口
+- `api-proxy-go/config.yaml` - 端口配置
+- `api-proxy-go/config/config_test.go` - 测试
+- `api-proxy-go/test_api_proxy.py` - 测试地址
+- `api-proxy-go/migrate_config.py` - 模板
+- `版本功能对比.md` - 新增对比文档
+
+### 验证
+- Go 编译通过
+- Go 全部测试通过（config/logger/middleware/proxy/upstream）
+- 需要重新编译 `api-proxy.exe` 生效
+
+---
+
