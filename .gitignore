@@ -41,7 +41,9 @@ api-proxy-go/startup.log
 /.sisyphus/
 /.vscode/
 
-# 信息图生成产物（可重新生成）
+# 信息图生成脚本和产物（含硬编码 API Key，已删除）
+/generate_infographic*.py
+/infographic_prompt.json
 /ks1-simple-api-*.png
 /ks1-simple-api-infographic.png
 /ks1-simple-api.zip
