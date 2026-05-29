@@ -98,33 +98,21 @@ http://localhost:5000/v1
 - [多 API 文档](./multi_free_api_proxy/MULTI_FREE_API_README.md) - 多 API 代理服务文档
 - [free_api_test README](./free_api_test/README.md) - 所有免费 API 详细说明
 - [Go 版本文档](./api-proxy-go/README.md) - Go 版本 API 代理服务文档
-
-## 📊 信息图
-
-使用 SenseNova U1 Fast 生成的项目信息图系列（2K 分辨率 2752×1536）：
-
-| 编号 | 主题 | 文件 |
-|------|------|------|
-| **01** | 项目全景图 — 3大核心数据 + 辐射架构图 | [ks1-simple-api-01-全景图-v2.png](./ks1-simple-api-01-全景图-v2.png) |
-| **02** | 双引擎架构对比 — Python Flask vs Go | [ks1-simple-api-02-双引擎架构-v2.png](./ks1-simple-api-02-双引擎架构-v2.png) |
-| **03** | 上游API状态全景 — 22个上游状态地图 | [ks1-simple-api-03-上游状态全景-v2.png](./ks1-simple-api-03-上游状态全景-v2.png) |
-| **04** | 部署场景与工作流 — 4场景 + 5步流程 | [ks1-simple-api-04-部署场景与工作流-v2.png](./ks1-simple-api-04-部署场景与工作流-v2.png) |
-
-> 💡 v1 版本（中文）因 AI 渲染中文文字存在乱码问题，已用 v2 版本（英文为主）替换。生成脚本见 `generate_infographic_01_v2.py` ~ `generate_infographic_04_v2.py`。
+- [版本功能对比](./版本功能对比.md) - Go 版与 Python 版功能差异对比
 
 ## 🔧 文件说明
 
 | 文件/目录 | 说明 |
 |-----------|------|
 | `multi_free_api_proxy/multi_free_api_proxy_v3_optimized.py` | 主代理服务程序（推荐使用） |
-| `free_api_test/` | 免费 API 配置目录 |
+| `free_api_test/` | 免费 API 配置目录（free1-free24） |
 | `api-proxy-go/` | Go 版本 API 代理服务（高性能） |
 | `start_proxy.bat` | Windows 启动脚本 |
 | `035-start_all_services.bat` | 一键启动所有服务 |
 | `036-start_all_services_gui.bat` | GUI 启动器 |
 | `050-start_api_proxy_go.bat` | Go 版本启动脚本 |
+| `test_upstreams_proxy_swap.py` | 全上游自动测试脚本 |
 | `.env` | 配置文件（需要自己配置 API Keys） |
-| `DEBUG_MODE.txt` | 调试模式开关 |
 
 ## 🌐 API 端点
 
@@ -135,6 +123,8 @@ http://localhost:5000/v1
 | `/health` | GET | 健康检查 |
 | `/debug` | GET | 调试面板（需启用调试模式） |
 | `/debug/stats` | GET | 调用统计 JSON（需启用调试模式） |
+| `/debug/api/test/all` | POST | 一键测试所有上游（Go 版） |
+| `/debug/logs` | GET | 关键日志（Go 版） |
 
 ## 📚 免费 API 列表
 
@@ -166,6 +156,8 @@ http://localhost:5000/v1
 | free20 | LongCat | LongCat-Flash | ✅ | 否 | |
 | free21 | FreeModel | freemodel-default | ✅ | **需要** | |
 | free22 | 商汤日日新 | sensenova-6.7 | ✅ | 否 | |
+| free23 | 小米 MiMo | mimo-v2.5-pro | ✅ | 否 | |
+| free24 | 魔搭 ModelScope | Qwen3.5-35B-A3B | ✅ | 否 | |
 
 **说明：**
 - ✅ 表示已测试可用
@@ -335,7 +327,7 @@ MIT
 ### 连接被拒绝
 
 - 确保服务正在运行
-- 检查端口 5000（Python）或 5060（Go）是否被占用
+- 检查端口 5000（Python）或 5001（Go）是否被占用
 
 ### API Key 错误
 
@@ -362,10 +354,10 @@ pip install --upgrade watchdog
 **解决方案：**
 ```bash
 # 检查服务是否运行
-curl http://localhost:5060/health
+curl http://localhost:5001/health
 
 # 访问调试页面
-# http://localhost:5060/debug
+# http://localhost:5001/debug
 
 # 重启 Go 版本
 050-start_api_proxy_go.bat
@@ -385,7 +377,7 @@ curl http://localhost:5060/health
 | 版本 | 端口 | 调试页面 | 健康检查 |
 |------|------|----------|----------|
 | **Python (GUI)** | `5000` | http://localhost:5000/debug | 无定期检查 |
-| **Go 版本** | `5060` | http://localhost:5060/debug | 每12小时定期检查 |
+| **Go 版本** | `5001` | http://localhost:5001/debug | 每12小时定期检查 |
 
 ### 可用上游判断逻辑差异
 
@@ -412,7 +404,7 @@ curl http://localhost:5060/health
 
 1. **访问两边的调试页面对比**：
    - Python: http://localhost:5000/debug
-   - Go: http://localhost:5060/debug
+   - Go: http://localhost:5001/debug
 
 2. **检查 Go 版本控制台日志**：
    - 查看健康检查失败的具体错误信息
