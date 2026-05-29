@@ -121,7 +121,7 @@ type ResponseFormat struct {
 // DefaultConfig 返回默认配置
 func DefaultConfig() *Config {
 	return &Config{
-		Listen: ":8080",
+		Listen: ":5001",
 		Upstreams: UpstreamsConfig{
 			RootDir: "./upstreams",
 		},

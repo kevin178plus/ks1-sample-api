@@ -102,7 +102,7 @@ def generate_go_main_config(env_vars):
     yaml_content = f"""# API 代理配置文件（从 Python 版本自动迁移）
 
 # 监听地址
-listen: ":8080"
+listen: ":5001"
 
 # 上游配置
 upstreams:

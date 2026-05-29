@@ -15,7 +15,7 @@ import subprocess
 import os
 
 # 配置
-BASE_URL = "http://localhost:5000"
+BASE_URL = "http://localhost:5001"
 TEST_TIMEOUT = 10
 API_TIMEOUT = 30
 

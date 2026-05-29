@@ -7,8 +7,8 @@ import (
 func TestDefaultConfig(t *testing.T) {
 	cfg := DefaultConfig()
 
-	if cfg.Listen != ":8080" {
-		t.Errorf("Expected listen :8080, got %s", cfg.Listen)
+	if cfg.Listen != ":5001" {
+		t.Errorf("Expected listen :5001, got %s", cfg.Listen)
 	}
 
 	if cfg.Upstreams.RootDir != "./upstreams" {
