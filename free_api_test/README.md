@@ -173,6 +173,15 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Proxy**: No
 - **Documentation**: See [free21/config.py](free21/config.py)
 
+### free25 - Agnes AI API
+- **Provider**: Agnes AI
+- **Base URL**: https://apihub.agnes-ai.com
+- **Models**: agnes-2.0-flash (文本), agnes-image-2.1-flash (图像)
+- **Features**: 512K 超长上下文，完全免费，高信息密度图像生成
+- **Status**: 未检测
+- **Proxy**: No
+- **Documentation**: See [free25/README.md](free25/README.md)
+
 ## Requirements
 
 - Python 3.7+
@@ -211,6 +220,7 @@ FREE18_API_KEY=your_gemini_api_key
 FREE19_API_KEY=your_api19_key
 LONGCAT_API_KEY=your_longcat_api_key
 FREEMODEL_API_KEY=your_freemodel_api_key
+FREE25_API_KEY=your_agnes_api_key
 ```
 
 **Disabling Specific Services**:
@@ -354,6 +364,7 @@ RESPONSE_FORMAT = {
 | free20 | LongCat | LongCat-Flash | No | ✅ | |
 | free21 | FreeModel | freemodel-default | Yes | ✅ | |
 | free22 | 商汤日日新 | sensenova-6.7 | No | ✅ | |
+| free25 | Agnes AI | agnes-2.0-flash | No | 未检测 | |
 
 **Legend:**
 - ✅ Active - Service is available

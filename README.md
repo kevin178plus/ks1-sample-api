@@ -158,6 +158,7 @@ http://localhost:5000/v1
 | free22 | 商汤日日新 | sensenova-6.7 | ✅ | 否 | |
 | free23 | 小米 MiMo | mimo-v2.5-pro | ✅ | 否 | |
 | free24 | 魔搭 ModelScope | Qwen3.5-35B-A3B | ✅ | 否 | |
+| free25 | Agnes AI | agnes-2.0-flash | 未检测 | 否 | |
 
 **说明：**
 - ✅ 表示已测试可用
