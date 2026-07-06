@@ -1575,3 +1575,48 @@ CACHE_DIR=D:\my_cache
 
 ---
 
+## 2026-07-06 22:15:00 添加 free25 Agnes AI 上游
+
+**更新时间：** 2026-07-06 22:15:00
+
+### 修改的文件
+
+1. **free_api_test/free25/config.py** - 新增 Agnes AI Python 配置
+   - BASE_URL: https://apihub.agnes-ai.com/v1
+   - MODEL_NAME: agnes-2.0-flash (512K 上下文)
+   - USE_PROXY: False (国内直连)
+   - DEFAULT_WEIGHT: 10
+
+2. **free_api_test/free25/README.md** - 新增文档
+   - 含文本模型 agnes-2.0-flash 和图像模型 agnes-image-2.1-flash 说明
+   - 含使用示例（Python/curl）
+
+3. **free_api_test/free25/test_api.py** - 新增测试脚本
+
+4. **api-proxy-go/upstreams/free25/config.yaml** - 新增 Go 配置
+
+5. **.env** - 添加 FREE25_API_KEY
+
+6. **free_api_test/.env.example** - 添加 FREE25 环境变量说明
+
+7. **free_api_test/README.md** - 添加 free25 到可用服务列表和状态表
+
+8. **README.md** - 添加 free25 到上游API列表
+
+9. **opencode.json → .opencode.json** - 重命名（添加点前缀）
+
+### 关键信息
+- Agnes AI: https://platform.agnes-ai.com
+- API Base URL: https://apihub.agnes-ai.com/v1
+- 文本模型: agnes-2.0-flash (512K 上下文，完全免费)
+- 图像模型: agnes-image-2.1-flash (完全免费)
+- 国内直连，无需代理
+
+### 验证
+- Python 测试脚本: `cd free_api_test/free25 && python test_api.py`
+- 需要重启 multi_free_api_proxy 和 api-proxy-go 生效
+- 需要运行 `test_upstreams_proxy_swap.py` 验证可用性
+
+---
+
+
