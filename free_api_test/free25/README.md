@@ -13,10 +13,10 @@ https://platform.agnes-ai.com/settings/apiKeys
 
 ### 支持的模型
 
-| 模型名称 | 类型 | 上下文窗口 | 价格 |
-|----------|------|-----------|------|
-| agnes-2.0-flash | 文本 | 512K | $0 / 1M tokens |
-| agnes-image-2.1-flash | 图像 | - | $0 / 张 |
+| 模型名称 | 类型 | 上下文窗口 | 价格 | 状态 |
+|----------|------|-----------|------|------|
+| agnes-2.0-flash | 文本 | 512K | $0 / 1M tokens | ✅ 实测有效 (2026-07-08) |
+| agnes-image-2.1-flash | 图像 | - | $0 / 张 | 未测试 |
 
 ### agnes-2.0-flash（文本模型）
 - API Endpoint: `POST /v1/chat/completions`
@@ -102,4 +102,5 @@ python test_api.py
 4. agnes-image-2.1-flash 专门优化图像生成能力
 
 ## 更新日志
+- 2026-07-08: ✅ 测试通过，功能验证有效（使用 free1/ask.txt 提示词，512K 上下文文本生成）
 - 2026-07-06: 初始版本

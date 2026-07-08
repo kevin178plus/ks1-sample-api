@@ -1619,4 +1619,36 @@ CACHE_DIR=D:\my_cache
 
 ---
 
+## 2026-07-08: free25 (Agnes AI) 有效性测试
+
+### 操作
+使用 `test_upstreams_proxy_swap.py` 测试 free25 连接，并对比 free1/ask.txt 的提示词进行功能验证。
+
+### 测试结果
+
+#### Go 代理测试 (`test_upstreams_proxy_swap.py`)
+| 项目 | 结果 |
+|------|------|
+| use_proxy | False（国内直连） |
+| 状态 | ✅ 成功 |
+
+#### 功能测试（使用 free1/ask.txt 提示词）
+| 项目 | 结果 |
+|------|------|
+| 提示词 | 土味情话生成（556 chars） |
+| 模型 | agnes-2.0-flash |
+| 输入 Token | 634 |
+| 输出 Token | 453 |
+| 总计 Token | 1087 |
+| 结果 | ✅ 成功 |
+
+### 文档更新
+- **README.md**: free25 状态更新为 ✅
+- **free_api_test/README.md**: 两处状态表更新为 ✅
+- **free_api_test/free25/README.md**: 添加状态和实测有效标记
+- **free_api_test/free25/test_result.txt**: 保存功能测试结果
+
+---
+
+
 

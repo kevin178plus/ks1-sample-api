@@ -178,7 +178,7 @@ This test suite provides access to multiple free AI API services through a unifi
 - **Base URL**: https://apihub.agnes-ai.com
 - **Models**: agnes-2.0-flash (文本), agnes-image-2.1-flash (图像)
 - **Features**: 512K 超长上下文，完全免费，高信息密度图像生成
-- **Status**: 未检测
+- **Status**: ✅ Active
 - **Proxy**: No
 - **Documentation**: See [free25/README.md](free25/README.md)
 
@@ -364,7 +364,7 @@ RESPONSE_FORMAT = {
 | free20 | LongCat | LongCat-Flash | No | ✅ | |
 | free21 | FreeModel | freemodel-default | Yes | ✅ | |
 | free22 | 商汤日日新 | sensenova-6.7 | No | ✅ | |
-| free25 | Agnes AI | agnes-2.0-flash | No | 未检测 | |
+| free25 | Agnes AI | agnes-2.0-flash | No | ✅ | 2026-07-08 实测有效 |
 
 **Legend:**
 - ✅ Active - Service is available
