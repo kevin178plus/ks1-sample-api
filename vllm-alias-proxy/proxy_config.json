@@ -1,0 +1,18 @@
+{
+  "listen_host": "127.0.0.1",
+  "listen_port": 18010,
+  "upstream_model": "DeepSeek-V4-Flash",
+  "timeout_seconds": 300,
+  "routes": {
+    "direct": {
+      "alias": "DeepSeek-V4-Flash",
+      "upstream": "http://10.140.6.57:8006",
+      "label": "直连 10.140.6.57:8006"
+    },
+    "ssh": {
+      "alias": "DeepSeek-V4-Flash-SSH",
+      "upstream": "http://127.0.0.1:18006",
+      "label": "SSH 隧道 127.0.0.1:18006"
+    }
+  }
+}
