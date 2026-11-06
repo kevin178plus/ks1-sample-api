@@ -1650,5 +1650,55 @@ CACHE_DIR=D:\my_cache
 
 ---
 
+## 2026-11-05 16:11:23 [配置] 迁入 vLLM 别名透传反代模块
+
+把 WorkBuddy 用的 vLLM 别名透传反代从临时工作区迁入本项目 `vllm-alias-proxy/`。
+
+涉及文件（相对项目根目录）：
+- `vllm-alias-proxy/vllm_alias_proxy.py`（新增）
+- `vllm-alias-proxy/proxy_config.json`（新增）
+- `vllm-alias-proxy/start.bat`、`vllm-alias-proxy/stop.bat`（新增）
+- `vllm-alias-proxy/test_proxy.py`（新增）
+- `vllm-alias-proxy/README.md`、`vllm-alias-proxy/.gitignore`（新增）
+
+变更内容：
+1. 背景：WorkBuddy `models.json` 的 `id` 既是唯一键又是请求体 `model` 值，两个条目想指向同一 vLLM 的两条链路就必须用不同 id，而 vLLM 不接受未注册模型名；远端启动参数不能改，故本机加一层只改写 `model` 的透传反代。
+2. 链路：`127.0.0.1:18010/direct` -> `10.140.6.57:8006`；`/ssh` -> `127.0.0.1:18006`（SSH 隧道，与直连是同一 vLLM）。除 `model` 外全字段透传，保留 tools / stream / SSE。
+3. 源码用 `Path(__file__).resolve().parent` 与 `cd /d "%~dp0"` 相对定位，迁移后零代码改动；BAT 保持纯 ASCII + CRLF + 无 BOM。
+4. 新增 `.gitignore` 忽略 `server.log` / `server.pid` / `server.port` / `__pycache__`，避免污染 git 与项目根目录。
+5. 常用程序目录 `D:/ks_ws/kk文件夹/01-常用程序（含ai编程助手）/` 新增启动入口 `srv001-start-vllm-alias-proxy-18010.bat`（纯 ASCII，`call` 本项目 start.bat）。真正 `.lnk` 需 COM（WScript.Shell），被安全策略硬拦（含提权申请），故改用 .bat 等价入口。
+
+验证：
+- `py_compile`、JSON 配置校验通过；旧路径硬编码检索为 0
+- 新位置启动 PID 20420，`/health` 200；`/direct/v1/models` 返回 `DeepSeek-V4-Flash`，`/ssh/v1/models` 返回 `DeepSeek-V4-Flash-SSH`
+- `PROXY_SMOKE=1 python -m unittest -v test_proxy`：11/11 通过（chat 双路由 200、SSE 含 [DONE]、tools 透传、6 个单元测试）
+- 复验后按 `stop.bat` 停止，服务记录已清理
+
+注意事项：
+- 本机存在 `HTTP_PROXY=127.0.0.1:8903`，访问回环地址必须 `NO_PROXY=127.0.0.1,localhost` / `curl --noproxy "*"`，否则会被代理返回假 502
+- 端口 18010 被占用时会自动顺延到 18011，需同步修改 WorkBuddy `models.json` 的 URL
+- `_AI-RULES/get_local_time.py` 依赖 tzdata，本机 Python 3.14 实测抛 `ZoneInfoNotFoundError`；本次时间改用 `datetime.now()` 动态获取
+
+---
 
 
+
+
+## 2026-11-06 09:38:35 [修复] vllm-alias-proxy 修复 404 与 ConnectionResetError
+
+全面检查 vllm-alias-proxy 并修复两个问题：
+
+1. 根路径 /v1/models 返回 404：改为默认转发到 direct 路由，兼容无前缀客户端
+2. ConnectionResetError 未捕获异常：覆盖 handle_one_request 捕获客户端断开错误，避免 traceback 刷屏
+
+修改文件：
+- vllm-alias-proxy/vllm_alias_proxy.py（build 3 -> build 4）
+- vllm-alias-proxy/README.md
+
+验证：
+- 单元测试 6/6 通过
+- 冒烟测试 5/5 通过（真实链路）
+- 客户端断开模拟测试：无 traceback
+- 服务已重启，PID 19564，端口 18010 正常
+
+---

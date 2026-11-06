@@ -1,4 +1,4 @@
-# VERSION: v1.0 build 3
+# VERSION: v1.0 build 4
 """vLLM 别名透传反代。
 
 把 WorkBuddy 发来的不同模型别名统一改写为上游 vLLM 真实注册的模型名，
@@ -146,6 +146,13 @@ class ProxyHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: Any) -> None:
         LOGGER.info("%s %s", self.address_string(), fmt % args)
 
+    def handle_one_request(self) -> None:
+        """捕获客户端断开导致的连接错误，避免 traceback 刷屏。"""
+        try:
+            super().handle_one_request()
+        except (ConnectionResetError, BrokenPipeError, ConnectionAbortedError):
+            LOGGER.debug("client disconnected before request completed")
+
     def _send_json(self, status: int, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
@@ -187,8 +194,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
 
         route = self._parse_route(parsed.path)
         if route is None or route[0] not in CONFIG["routes"]:
-            self._send_json(404, {"error": "unknown route", "path": parsed.path})
-            return
+            # 根路径 /v1/... 默认转发到 direct 路由，兼容无前缀客户端
+            if parsed.path.startswith("/v1/"):
+                route = ("direct", parsed.path)
+            else:
+                self._send_json(404, {"error": "unknown route", "path": parsed.path})
+                return
 
         route_name, upstream_path = route
         route_cfg = CONFIG["routes"][route_name]
